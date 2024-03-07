@@ -2,9 +2,16 @@ from typing import Type
 
 from nnunetv2.preprocessing.normalization.default_normalization_schemes import CTNormalization, NoNormalization, \
     ZScoreNormalization, RescaleTo01Normalization, RGBTo01Normalization, ImageNormalization
+from nnunetv2.preprocessing.normalization.petct_normalization_schemes import CTSoftTissueNormalization, \
+    CTLungNormalization, PETTopQNormalization, PETQNormalization, PETQZNormalization
 
 channel_name_to_normalization_mapping = {
     'CT': CTNormalization,
+    'CTSoft': CTSoftTissueNormalization,
+    'CTLung': CTLungNormalization,
+    'PETTopQ': PETTopQNormalization,
+    'PETQ': PETQNormalization,
+    'PETQZ': PETQZNormalization,
     'noNorm': NoNormalization,
     'zscore': ZScoreNormalization,
     'rescale_to_0_1': RescaleTo01Normalization,
