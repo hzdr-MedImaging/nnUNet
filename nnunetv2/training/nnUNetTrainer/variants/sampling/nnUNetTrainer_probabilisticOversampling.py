@@ -28,6 +28,8 @@ class nnUNetTrainer_probabilisticOversampling(nnUNetTrainer):
     def get_plain_dataloaders(self, initial_patch_size: Tuple[int, ...], dim: int):
         dataset_tr, dataset_val = self.get_tr_and_val_datasets()
 
+        self.print_to_log_file(f"Actual self.oversample_foreground_percent {self.oversample_foreground_percent}")
+
         if dim == 2:
             dl_tr = nnUNetDataLoader2D(dataset_tr,
                                        self.batch_size,
