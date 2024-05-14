@@ -16,6 +16,13 @@ class DeepSupervisionWrapper(nn.Module):
         self.weight_factors = tuple(weight_factors)
         self.loss = loss
 
+    def update_weights(self, weight_factors):
+        assert any([x != 0 for x in weight_factors]), "At least one weight factor should be != 0.0"
+        weight_factors = tuple(weight_factors)
+        assert len(self.weight_factors) == len(weight_factors), "Weight factors must be the same length as" \
+                                                                "loss components"
+        self.weight_factors = weight_factors
+
     def forward(self, *args):
         assert all([isinstance(i, (tuple, list)) for i in args]), \
             f"all args must be either tuple or list, got {[type(i) for i in args]}"
