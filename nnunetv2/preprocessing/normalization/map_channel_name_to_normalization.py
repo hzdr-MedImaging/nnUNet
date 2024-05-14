@@ -6,13 +6,13 @@ from nnunetv2.preprocessing.normalization.petct_normalization_schemes import CTS
     CTLungNormalization, PETTopQNormalization, PETQNormalization, PETQZNormalization
 
 channel_name_to_normalization_mapping = {
-    'CT': CTNormalization,
-    'CTSoft': CTSoftTissueNormalization,
-    'CTLung': CTLungNormalization,
-    'PETTopQ': PETTopQNormalization,
-    'PETQ': PETQNormalization,
-    'PETQZ': PETQZNormalization,
-    'noNorm': NoNormalization,
+    'ct': CTNormalization,
+    'ctsoft': CTSoftTissueNormalization,
+    'ctlung': CTLungNormalization,
+    'petopq': PETTopQNormalization,
+    'petq': PETQNormalization,
+    'petqz': PETQZNormalization,
+    'nonorm': NoNormalization,
     'zscore': ZScoreNormalization,
     'rescale_to_0_1': RescaleTo01Normalization,
     'rgb_to_0_1': RGBTo01Normalization
@@ -24,7 +24,7 @@ def get_normalization_scheme(channel_name: str) -> Type[ImageNormalization]:
     If we find the channel_name in channel_name_to_normalization_mapping return the corresponding normalization. If it is
     not found, use the default (ZScoreNormalization)
     """
-    norm_scheme = channel_name_to_normalization_mapping.get(channel_name)
+    norm_scheme = channel_name_to_normalization_mapping.get(channel_name.casefold())
     if norm_scheme is None:
         norm_scheme = ZScoreNormalization
     # print('Using %s for image normalization' % norm_scheme.__name__)
