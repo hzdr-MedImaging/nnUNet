@@ -535,6 +535,15 @@ class ExperimentPlanner(object):
                     'inherits_from': '3d_fullres',
                     'previous_stage': '3d_lowres'
                 }
+            # Extra 3d_fullres plans with different batch sizes
+            plans['configurations']['3d_fullres_bs4'] = {
+                'inherits_from': '3d_fullres',
+                'batch_size': 4
+            }
+            plans['configurations']['3d_fullres_bs8'] = {
+                'inherits_from': '3d_fullres',
+                'batch_size': 8
+            }
 
         self.plans = plans
         self.save_plans(plans)
