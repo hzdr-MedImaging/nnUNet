@@ -40,7 +40,7 @@ def get_allowed_n_proc_DA():
         elif hostname in ["vega", ]:
             use_this = 16
         elif hostname in ["lyra", ]:
-            use_this = 96
+            use_this = 48
         elif hostname in ["fwpvm43", ]:
             use_this = 32
         else:
