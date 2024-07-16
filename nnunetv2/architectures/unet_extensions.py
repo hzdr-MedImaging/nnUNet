@@ -59,10 +59,8 @@ class ResEncUNetWithSA(nn.Module):
 
     def forward(self, x):
         skips = self.encoder(x)
-        postskips = self.interconnect(skips)
-        for skip, postskip in zip(skips, postskips):
-            print(skip.equal(postskip))
-        return self.decoder(postskips)
+        skips = self.interconnect(skips)
+        return self.decoder(skips)
 
     def compute_conv_feature_map_size(self, input_size):
         assert len(input_size) == convert_conv_op_to_dim(
