@@ -56,11 +56,17 @@ class ResEncUNetWithSA(nn.Module):
                                        return_skips=True, disable_default_stem=False, stem_channels=stem_channels)
         self.interconnect = MHSA_interconnect(self.encoder, active_stages=sa_stage_indices, num_heads=num_sa_heads)
         self.decoder = UNetDecoder(self.encoder, num_classes, n_conv_per_stage_decoder, deep_supervision)
+        print("Active SA stages:", sa_stage_indices)
+        print("Num SA heads:", num_sa_heads)
 
     def forward(self, x):
         skips = self.encoder(x)
         skips = self.interconnect(skips)
+        #[print(A.shape) for att_list in self.interconnect.get_all_attention_mats() for A in att_list]
         return self.decoder(skips)
+
+    def get_all_attention_maps(self):
+        self.interconnect.get_all_attention_maps()
 
     def compute_conv_feature_map_size(self, input_size):
         assert len(input_size) == convert_conv_op_to_dim(
@@ -82,7 +88,7 @@ if __name__ == '__main__':
     model = ResEncUNetWithSA(4, 6, (32, 64, 125, 256, 320, 320), nn.Conv3d, 3, (1, 2, 2, 2, 2, 2), (2, 2, 2, 2, 2, 2),
                              3,
                              (2, 2, 2, 2, 2), False, nn.BatchNorm3d, None, None, None, nn.ReLU, deep_supervision=True,
-                             sa_stage_indices=())
+                             sa_stage_indices=(-1, -2))
 
     out = model(data)[0]
 

@@ -52,7 +52,7 @@ class SAHead(nn.Module):
         Q = nn.functional.normalize(Q, eps=1e-6)
         K = nn.functional.normalize(K, eps=1e-6)
 
-        A = torch.einsum("nqi,nqj->nij", [Q, K]).softmax(dim=-1)
+        A = torch.einsum("nqi,nqj->nij", [Q, K]).softmax(dim=-1) # softmax along j: keys
         R = torch.einsum("nij,nvj->nvi", [A, V])  # dim: (b,dv,vox)
 
         if self.save_attention:
@@ -113,10 +113,8 @@ class MHSA(nn.Module):
 
         if self.position_encoding:
             grid_size = x.shape[2:]  # remove batch and channel dimensions
-            pos_matrix = get_sincos_embeding(grid_size=grid_size, device=x.device, embed_dim=self.position_encoding_dim)
-            newshape = [-1 for i in range(len(pos_matrix.shape))]
-            newshape[0] = x.shape[0]
-            pos_matrix = pos_matrix.expand(newshape)
+            pos_matrix = get_sincos_embeding(grid_size=grid_size, batch_size=x.shape[0],
+                                             embed_dim=self.position_encoding_dim, device=x.device)
             x_enc = torch.concat([x, pos_matrix], dim=1)
         else:
             x_enc = x
@@ -190,7 +188,7 @@ class MHSA_interconnect(nn.Module):
     def forward(self, skips):
         return [op(skip) for op, skip in zip(self.ops, skips)]
 
-    def get_all_attention_mats(self):
+    def get_all_attention_maps(self):
         return [self.ops[i].get_attention_list() for i in self.active_stages]
 
     def compute_memory(self, input_size):
@@ -232,6 +230,7 @@ if __name__ == '__main__':
                               (1, 3, 4, 6, 6, 6), True, nn.modules.instancenorm.InstanceNorm3d,
                               nonlin=nn.ReLU,
                               return_skips=True, disable_default_stem=False, stem_channels=None)
+    print(encoder)
     mhsa_ic = MHSA_interconnect(encoder, (-1, -2))
     print(mhsa_ic)
     [print(name) for name, _ in mhsa_ic.named_children()]

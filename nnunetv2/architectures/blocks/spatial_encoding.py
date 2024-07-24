@@ -4,7 +4,8 @@ import torch
 import torch.nn as nn
 
 def get_sincos_embeding(
-    grid_size: Tuple[int], embed_dim: int = 96, min_freq: float = 1/32.0, desync_coeff: float = 5, device: torch.device = None
+    grid_size: Tuple[int], embed_dim: int = 96, batch_size:int = 1, min_freq: float = 1/32.0, desync_coeff: float = 5,
+        device: torch.device = None
 ) -> torch.nn.Parameter:
     """
     Builds a sin-cos position embedding based on the given grid size, embed dimension, minimal frequency.
@@ -33,7 +34,10 @@ def get_sincos_embeding(
 
     arg_list = [torch.einsum("d,...->d...", [freq, grid_i]) for grid_i in grid_list]
     enc_stack = [f(arg) for arg in arg_list for f in (torch.sin, torch.cos)]
-    pos_emb = torch.cat(enc_stack, dim=0)[None, :]
+    pos_emb = torch.cat(enc_stack, dim=0)
+
+    newshape = (batch_size,) + pos_emb.shape
+    pos_emb = pos_emb.expand(newshape)
 
     pos_embed = nn.Parameter(pos_emb)
     pos_embed.requires_grad = False
