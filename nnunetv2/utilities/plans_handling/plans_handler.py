@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections.abc
 import warnings
 
 from copy import deepcopy
@@ -228,6 +229,15 @@ class PlansManager(object):
     def __repr__(self):
         return self.plans.__repr__()
 
+    def _internal_recursive_update(self, d: dict, u: Union[dict, str]):
+        dd = deepcopy(d)
+        for k, v in u.items():
+            if isinstance(v, collections.abc.Mapping):
+                dd[k] = self._internal_recursive_update(dd.get(k, {}), v)
+            else:
+                dd[k] = v
+        return dd
+
     def _internal_resolve_configuration_inheritance(self, configuration_name: str,
                                                     visited: Tuple[str, ...] = None) -> dict:
         if configuration_name not in self.plans['configurations'].keys():
@@ -248,7 +258,7 @@ class PlansManager(object):
                 visited = (*visited, configuration_name)
 
             base_config = self._internal_resolve_configuration_inheritance(parent_config_name, visited)
-            base_config.update(configuration)
+            base_config = self._internal_recursive_update(base_config, configuration)
             configuration = base_config
         return configuration
 
