@@ -84,7 +84,7 @@ class PmedIO(BaseReaderWriter):
 
     def read_seg(self, seg_fname: str) -> Tuple[np.ndarray, dict]:
         images, dict = self.read_images((seg_fname, ))
-        return np.round(images), dict
+        return np.rint(images).astype(int), dict
 
     def write_seg(self, seg: np.ndarray, output_fname: str, properties: dict) -> None:
         # revert transpose
