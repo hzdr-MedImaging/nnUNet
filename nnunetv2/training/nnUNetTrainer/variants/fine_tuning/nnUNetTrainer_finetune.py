@@ -6,6 +6,12 @@ from nnunetv2.training.lr_scheduler.polylr import PolyLRScheduler
 from nnunetv2.training.lr_scheduler.weibull_lr import WeibullLRScheduler
 
 
+class nnUNetTrainer_noSmooth_pretrained(nnUNetTrainerDiceCELoss_noSmooth):
+    def __init__(self, plans: dict, configuration: str, fold: int, dataset_json: dict, unpack_dataset: bool = True,
+                 device: torch.device = torch.device('cuda')):
+        super().__init__(plans, configuration, fold, dataset_json, unpack_dataset, device)
+
+
 class nnUNetTrainer_noSmooth_finetune_e250_lr3(nnUNetTrainerDiceCELoss_noSmooth):
     def __init__(self, plans: dict, configuration: str, fold: int, dataset_json: dict, unpack_dataset: bool = True,
                  device: torch.device = torch.device('cuda')):
@@ -48,6 +54,22 @@ class nnUNetTrainer_noSmooth_probOS01_finetune_weibull_e200_lr1e3(nnUNetTrainer_
     def __init__(self, plans: dict, configuration: str, fold: int, dataset_json: dict, unpack_dataset: bool = True,
                  device: torch.device = torch.device('cuda')):
         super().__init__(plans, configuration, fold, dataset_json, unpack_dataset, device)
+
+
+class nnUNetTrainer_noSmooth_finetune_weibull_e500_lr1e3(nnUNetTrainer_noSmooth_weibull):
+    def __init__(self, plans: dict, configuration: str, fold: int, dataset_json: dict, unpack_dataset: bool = True,
+                 device: torch.device = torch.device('cuda')):
+        super().__init__(plans, configuration, fold, dataset_json, unpack_dataset, device)
+        self.num_epochs = 500
+        self.max_lr = 1e-3
+
+
+class nnUNetTrainer_noSmooth_finetune_weibull_e200_lr2e3(nnUNetTrainer_noSmooth_weibull):
+    def __init__(self, plans: dict, configuration: str, fold: int, dataset_json: dict, unpack_dataset: bool = True,
+                 device: torch.device = torch.device('cuda')):
+        super().__init__(plans, configuration, fold, dataset_json, unpack_dataset, device)
+        self.num_epochs = 200
+        self.max_lr = 2e-3
 
 
 
