@@ -36,7 +36,10 @@ class ResEncUNetWithSA(nn.Module):
                  bottleneck_channels: Union[int, List[int], Tuple[int, ...]] = None,
                  stem_channels: int = None,
                  num_sa_heads: int = 2,
-                 sa_stage_indices: Union[int, List[int], Tuple[int, ...]] = -1
+                 sa_stage_indices: Union[int, List[int], Tuple[int, ...]] = -1,
+                 residual_sa: bool = True,
+                 sa_merging_bias: bool = True,
+                 qk_norm_type: str = "l2"
                  ):
         super().__init__()
         if isinstance(n_blocks_per_stage, int):
@@ -54,7 +57,9 @@ class ResEncUNetWithSA(nn.Module):
                                        n_blocks_per_stage, conv_bias, norm_op, norm_op_kwargs, dropout_op,
                                        dropout_op_kwargs, nonlin, nonlin_kwargs, block, bottleneck_channels,
                                        return_skips=True, disable_default_stem=False, stem_channels=stem_channels)
-        self.interconnect = MHSA_interconnect(self.encoder, active_stages=sa_stage_indices, num_heads=num_sa_heads)
+        self.interconnect = MHSA_interconnect(self.encoder, active_stages=sa_stage_indices, num_heads=num_sa_heads,
+                                              residual=residual_sa, merging_bias=sa_merging_bias,
+                                              qk_norm_type=qk_norm_type)
         self.decoder = UNetDecoder(self.encoder, num_classes, n_conv_per_stage_decoder, deep_supervision)
         print("Active SA stages:", sa_stage_indices)
         print("Num SA heads:", num_sa_heads)
@@ -66,7 +71,7 @@ class ResEncUNetWithSA(nn.Module):
         return self.decoder(skips)
 
     def get_all_attention_maps(self):
-        self.interconnect.get_all_attention_maps()
+        return self.interconnect.get_all_attention_maps()
 
     def compute_conv_feature_map_size(self, input_size):
         assert len(input_size) == convert_conv_op_to_dim(

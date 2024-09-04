@@ -18,7 +18,8 @@ class SAHead(nn.Module):
                  dv: int,  # if None, calculated as input_channels / num_heads
                  dk: int,  # if None, dk = dv
                  projection_kernel_size: int = 1,
-                 save_attention: bool = True
+                 save_attention: bool = True,
+                 qk_norm_type: str = "l2"
                  ):
         super().__init__()
         self.input_channels = input_channels
@@ -26,9 +27,12 @@ class SAHead(nn.Module):
         self.projection_kernel_size = projection_kernel_size
         self.save_attention = save_attention
         self.attention_matrix = None
+        self.qk_norm_type = qk_norm_type
         self.conv_op = conv_op
         self.dv = dv
         self.dk = dk
+        if qk_norm_type == "l2scaled":
+            self.softmax_scale = torch.nn.Parameter(torch.ones(1))
 
         self.proj_q = self.conv_op(in_channels=self.input_channels_with_enc,
                                    out_channels=self.dk, kernel_size=self.projection_kernel_size,
@@ -49,14 +53,42 @@ class SAHead(nn.Module):
         K = torch.flatten(key, start_dim=2)  # dim: (b,dk,vox)
         V = torch.flatten(value, start_dim=2)  # dim: (b,dv,vox)
 
-        Q = nn.functional.normalize(Q, eps=1e-6)
-        K = nn.functional.normalize(K, eps=1e-6)
+        if self.qk_norm_type == "l2":
+            Q = nn.functional.normalize(Q, eps=1e-6)
+            K = nn.functional.normalize(K, eps=1e-6)
+        elif self.qk_norm_type == "l2scaled":
+            Q = nn.functional.normalize(Q, eps=1e-6)
+            K = nn.functional.normalize(K, eps=1e-6)
+            Q = Q * self.softmax_scale
+        elif self.qk_norm_type == "l2x2":
+            Q = nn.functional.normalize(Q, eps=1e-6)
+            K = nn.functional.normalize(K, eps=1e-6)
+            Q = Q * (2 ** (1 / 2))
+            K = K * (2 ** (1 / 2))
+        elif self.qk_norm_type == "l2x3":
+            Q = nn.functional.normalize(Q, eps=1e-6)
+            K = nn.functional.normalize(K, eps=1e-6)
+            Q = Q * (3 ** (1 / 2))
+            K = K * (3 ** (1 / 2))
+        elif self.qk_norm_type == "l2x4":
+            Q = nn.functional.normalize(Q, eps=1e-6)
+            K = nn.functional.normalize(K, eps=1e-6)
+            Q = Q * 2
+            K = K * 2
+        elif self.qk_norm_type == "dk":
+            Q = Q / (self.dk ** (1 / 4))
+            K = K / (self.dk ** (1 / 4))
+        else:
+            sys.exit("Unsupported QK-normalization")
 
         A = torch.einsum("nqi,nqj->nij", [Q, K]).softmax(dim=-1) # softmax along j: keys
         R = torch.einsum("nij,nvj->nvi", [A, V])  # dim: (b,dv,vox)
 
         if self.save_attention:
             self.attention_matrix = A.detach()
+            batch_dim = value.shape[:1]
+            spatial_dims = value.shape[2:]
+            self.attention_matrix = self.attention_matrix.reshape(batch_dim + spatial_dims + spatial_dims)
 
         return torch.reshape(R, value.shape)
 
@@ -74,8 +106,10 @@ class MHSA(nn.Module):
                  position_encoding: bool = True,
                  projection_kernel_size: int = 1,
                  merging_kernel_size: int = 1,
+                 merging_bias: bool = True,
                  position_encoding_dim: int = 96,
-                 save_attention: bool = True
+                 save_attention: bool = True,
+                 qk_norm_type: str = "l2"
                  ):
         super().__init__()
         self.input_channels = input_channels
@@ -87,6 +121,7 @@ class MHSA(nn.Module):
         self.position_encoding_dim = position_encoding_dim
         self.save_attention = save_attention
         self.conv_op = conv_op
+        self.qk_norm_type = qk_norm_type
 
         if dv is None:
             self.dv = input_channels // num_heads
@@ -100,10 +135,11 @@ class MHSA(nn.Module):
 
         self.proj_merge = self.conv_op(in_channels=self.dv * num_heads, out_channels=self.input_channels,
                                        kernel_size=self.merging_kernel_size,
-                                       padding=self.merging_kernel_size // 2, bias=True)
+                                       padding=self.merging_kernel_size // 2, bias=merging_bias)
         self.sa_heads = [SAHead(self.input_channels,
                                 self.input_channels + self.position_encoding_dim * self.position_encoding,
-                                self.conv_op, self.dv, self.dk, self.projection_kernel_size, self.save_attention)
+                                self.conv_op, self.dv, self.dk, self.projection_kernel_size, self.save_attention,
+                                self.qk_norm_type)
                          for i in range(self.num_heads)]
         self.sa_heads = nn.ModuleList(self.sa_heads)
 
@@ -160,7 +196,9 @@ class MHSA_interconnect(nn.Module):
                  residual: bool = True,
                  position_encoding: bool = True,
                  projection_kernel_size: int = 1,
-                 merging_kernel_size: int = 1
+                 merging_kernel_size: int = 1,
+                 merging_bias: bool = True,
+                 qk_norm_type: str = "l2"
                  ):
         super(MHSA_interconnect, self).__init__()
         if isinstance(active_stages, int):
@@ -173,6 +211,7 @@ class MHSA_interconnect(nn.Module):
         self.position_encoding = position_encoding
         self.projection_kernel_size = projection_kernel_size
         self.merging_kernel_size = merging_kernel_size
+        self.qk_norm_type = qk_norm_type
         self.conv_op = encoder.conv_op if conv_op is None else conv_op
         self.dv = dv
         self.dk = dk
@@ -182,7 +221,8 @@ class MHSA_interconnect(nn.Module):
             self.ops[i] = MHSA(self.features_per_stage[i], self.conv_op, num_heads=self.num_heads, dv=self.dv,
                                dk=self.dk, residual=self.residual, position_encoding=self.position_encoding,
                                projection_kernel_size=self.projection_kernel_size,
-                               merging_kernel_size=self.merging_kernel_size)
+                               merging_kernel_size=self.merging_kernel_size, merging_bias=merging_bias,
+                               qk_norm_type=qk_norm_type)
         self.ops = nn.ModuleList(self.ops)
 
     def forward(self, skips):
@@ -216,7 +256,7 @@ class MHSA_interconnect(nn.Module):
 if __name__ == '__main__':
     data = torch.rand((3, 4, 64, 32, 16))
 
-    mhsa = MHSA(4, nn.Conv3d, num_heads=2)
+    mhsa = MHSA(4, nn.Conv3d, num_heads=2, qk_norm_type="l2scaled")
     print(mhsa)
     [print(name) for name, _ in mhsa.named_children()]
     print(mhsa(data).shape)
