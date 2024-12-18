@@ -1,3 +1,4 @@
+import collections.abc
 import inspect
 import itertools
 import multiprocessing
@@ -64,7 +65,8 @@ class nnUNetPredictor(object):
 
     def initialize_from_trained_model_folder(self, model_training_output_dir: str,
                                              use_folds: Union[Tuple[Union[int, str]], None],
-                                             checkpoint_name: str = 'checkpoint_final.pth'):
+                                             checkpoint_name: str = 'checkpoint_final.pth',
+                                             overwrites: dict = dict()):
         """
         This is used when making predictions with a trained model
         """
@@ -92,6 +94,8 @@ class nnUNetPredictor(object):
             parameters.append(checkpoint['network_weights'])
 
         configuration_manager = plans_manager.get_configuration(configuration_name)
+        # TODO: make a better way to get attention matrix out of the model without breaking torch.compile
+        configuration_manager.configuration['architecture']['arch_kwargs'].update(overwrites)
         # restore network
         num_input_channels = determine_num_input_channels(plans_manager, configuration_manager, dataset_json)
         trainer_class = recursive_find_python_class(join(nnunetv2.__path__[0], "training", "nnUNetTrainer"),
