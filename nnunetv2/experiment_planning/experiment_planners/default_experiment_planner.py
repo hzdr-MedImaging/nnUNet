@@ -82,6 +82,21 @@ class ExperimentPlanner(object):
 
         self.plans = None
 
+        self.extra_3d_fullres_configs = {
+            '3d_fullres_bs3': {
+                'inherits_from': '3d_fullres',
+                'batch_size': 3
+            },
+            '3d_fullres_bs4': {
+                'inherits_from': '3d_fullres',
+                'batch_size': 4
+            },
+            '3d_fullres_bs8': {
+                'inherits_from': '3d_fullres',
+                'batch_size': 8
+            }
+        }
+
         if isfile(join(self.raw_dataset_folder, 'splits_final.json')):
             _maybe_copy_splits_file(join(self.raw_dataset_folder, 'splits_final.json'),
                                     join(preprocessed_folder, 'splits_final.json'))
@@ -535,19 +550,7 @@ class ExperimentPlanner(object):
                     'inherits_from': '3d_fullres',
                     'previous_stage': '3d_lowres'
                 }
-            # Extra 3d_fullres plans with different batch sizes
-            plans['configurations']['3d_fullres_bs3'] = {
-                'inherits_from': '3d_fullres',
-                'batch_size': 3
-            }
-            plans['configurations']['3d_fullres_bs4'] = {
-                'inherits_from': '3d_fullres',
-                'batch_size': 4
-            }
-            plans['configurations']['3d_fullres_bs8'] = {
-                'inherits_from': '3d_fullres',
-                'batch_size': 8
-            }
+            plans['configurations'].update(self.extra_3d_fullres_configs)
 
         self.plans = plans
         self.save_plans(plans)
