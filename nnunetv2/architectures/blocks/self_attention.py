@@ -5,11 +5,97 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.nn.modules.conv import _ConvNd
+from torch.nn.modules.dropout import _DropoutNd
 
 from nnunetv2.architectures.blocks.spatial_encoding import get_sincos_embeding
 from dynamic_network_architectures.building_blocks.residual_encoders import ResidualEncoder
 from dynamic_network_architectures.building_blocks.plain_conv_encoder import PlainConvEncoder
 
+
+class DropoutNormNonlin(nn.Module):
+    def __init__(self,
+                 output_channels: int,
+                 norm_op: Union[None, Type[nn.Module]] = None,
+                 norm_op_kwargs: dict = None,
+                 dropout_op: Union[None, Type[_DropoutNd]] = None,
+                 dropout_op_kwargs: dict = None,
+                 nonlin: Union[None, Type[torch.nn.Module]] = None,
+                 nonlin_kwargs: dict = None,
+                 nonlin_first: bool = False
+                 ):
+        super(DropoutNormNonlin, self).__init__()
+
+        if norm_op_kwargs is None:
+            norm_op_kwargs = {}
+        if nonlin_kwargs is None:
+            nonlin_kwargs = {}
+
+        ops = []
+
+        if dropout_op is not None:
+            self.dropout = dropout_op(**dropout_op_kwargs)
+            ops.append(self.dropout)
+
+        if norm_op is not None:
+            self.norm = norm_op(output_channels, **norm_op_kwargs)
+            ops.append(self.norm)
+
+        if nonlin is not None:
+            self.nonlin = nonlin(**nonlin_kwargs)
+            ops.append(self.nonlin)
+
+        if nonlin_first and (norm_op is not None and nonlin is not None):
+            ops[-1], ops[-2] = ops[-2], ops[-1]
+
+        self.all_modules = nn.Sequential(*ops)
+
+    def forward(self, x):
+        return self.all_modules(x)
+
+
+class QKNormalize(nn.Module):
+    def __init__(self,
+                 qk_norm_type: str,
+                 dk: int
+                 ):
+        super(QKNormalize, self).__init__()
+
+        if qk_norm_type == "l2scaled":
+            self.softmax_scale = torch.nn.Parameter(torch.ones(1))
+        if qk_norm_type == "l2scaled1":
+            self.softmax_scale = torch.nn.Parameter(torch.ones(1))
+        if qk_norm_type == "l2scaled2":
+            self.softmax_scale = torch.nn.Parameter(torch.zeros(1))
+
+
+        def norm_func(Q):
+            if qk_norm_type == "l2":
+                Q = nn.functional.normalize(Q, eps=1e-6)
+            elif qk_norm_type == "l2scaled":
+                Q = nn.functional.normalize(Q, eps=1e-6)
+                Q = Q * (self.softmax_scale ** (1 / 2))
+            elif qk_norm_type == "l2scaled1" or qk_norm_type == "l2scaled2":
+                Q = nn.functional.normalize(Q, eps=1e-6)
+                Q = Q * (self.softmax_scale ** 2 + 1) ** (1 / 2)
+            elif qk_norm_type == "l2x2":
+                Q = nn.functional.normalize(Q, eps=1e-6)
+                Q = Q * (2 ** (1 / 2))
+            elif qk_norm_type == "l2x3":
+                Q = nn.functional.normalize(Q, eps=1e-6)
+                Q = Q * (3 ** (1 / 2))
+            elif qk_norm_type == "l2x4":
+                Q = nn.functional.normalize(Q, eps=1e-6)
+                Q = Q * 2
+            elif qk_norm_type == "dk":
+                Q = Q / (dk ** (1 / 4))
+            else:
+                sys.exit("Unsupported QK-normalization")
+            return Q
+
+        self.norm_func = norm_func
+
+    def forward(self, x):
+        return self.norm_func(x)
 
 class SAHead(nn.Module):
     def __init__(self, input_channels: int,
@@ -31,8 +117,6 @@ class SAHead(nn.Module):
         self.conv_op = conv_op
         self.dv = dv
         self.dk = dk
-        if qk_norm_type == "l2scaled":
-            self.softmax_scale = torch.nn.Parameter(torch.ones(1))
 
         self.proj_q = self.conv_op(in_channels=self.input_channels_with_enc,
                                    out_channels=self.dk, kernel_size=self.projection_kernel_size,
@@ -43,6 +127,9 @@ class SAHead(nn.Module):
         self.proj_v = self.conv_op(in_channels=self.input_channels, out_channels=self.dv,
                                    kernel_size=self.projection_kernel_size,
                                    padding=self.projection_kernel_size // 2, bias=True)
+        self.qk_norm = QKNormalize(qk_norm_type, dk)
+
+
 
     def forward(self, x, x_enc):
         query = self.proj_q(x_enc)
@@ -53,33 +140,8 @@ class SAHead(nn.Module):
         K = torch.flatten(key, start_dim=2)  # dim: (b,dk,vox)
         V = torch.flatten(value, start_dim=2)  # dim: (b,dv,vox)
 
-        if self.qk_norm_type == "l2":
-            Q = nn.functional.normalize(Q, eps=1e-6)
-            K = nn.functional.normalize(K, eps=1e-6)
-        elif self.qk_norm_type == "l2scaled":
-            Q = nn.functional.normalize(Q, eps=1e-6)
-            K = nn.functional.normalize(K, eps=1e-6)
-            Q = Q * self.softmax_scale
-        elif self.qk_norm_type == "l2x2":
-            Q = nn.functional.normalize(Q, eps=1e-6)
-            K = nn.functional.normalize(K, eps=1e-6)
-            Q = Q * (2 ** (1 / 2))
-            K = K * (2 ** (1 / 2))
-        elif self.qk_norm_type == "l2x3":
-            Q = nn.functional.normalize(Q, eps=1e-6)
-            K = nn.functional.normalize(K, eps=1e-6)
-            Q = Q * (3 ** (1 / 2))
-            K = K * (3 ** (1 / 2))
-        elif self.qk_norm_type == "l2x4":
-            Q = nn.functional.normalize(Q, eps=1e-6)
-            K = nn.functional.normalize(K, eps=1e-6)
-            Q = Q * 2
-            K = K * 2
-        elif self.qk_norm_type == "dk":
-            Q = Q / (self.dk ** (1 / 4))
-            K = K / (self.dk ** (1 / 4))
-        else:
-            sys.exit("Unsupported QK-normalization")
+        Q = self.qk_norm(Q)
+        K = self.qk_norm(K)
 
         A = torch.einsum("nqi,nqj->nij", [Q, K]).softmax(dim=-1) # softmax along j: keys
         R = torch.einsum("nij,nvj->nvi", [A, V])  # dim: (b,dv,vox)
@@ -109,7 +171,14 @@ class MHSA(nn.Module):
                  merging_bias: bool = True,
                  position_encoding_dim: int = 96,
                  save_attention: bool = True,
-                 qk_norm_type: str = "l2"
+                 qk_norm_type: str = "l2",
+                 nnd: bool = True,
+                 norm_op: Union[None, Type[nn.Module]] = None,
+                 norm_op_kwargs: dict = None,
+                 dropout_op: Union[None, Type[_DropoutNd]] = None,
+                 dropout_op_kwargs: dict = None,
+                 nonlin: Union[None, Type[torch.nn.Module]] = None,
+                 nonlin_kwargs: dict = None,
                  ):
         super().__init__()
         self.input_channels = input_channels
@@ -122,6 +191,7 @@ class MHSA(nn.Module):
         self.save_attention = save_attention
         self.conv_op = conv_op
         self.qk_norm_type = qk_norm_type
+        self.nnd = nnd
 
         if dv is None:
             self.dv = input_channels // num_heads
@@ -133,6 +203,10 @@ class MHSA(nn.Module):
         else:
             self.dk = dk
 
+        self.nnd_op = DropoutNormNonlin(input_channels,
+                                        norm_op, norm_op_kwargs,
+                                        dropout_op, dropout_op_kwargs,
+                                        nonlin, nonlin_kwargs)
         self.proj_merge = self.conv_op(in_channels=self.dv * num_heads, out_channels=self.input_channels,
                                        kernel_size=self.merging_kernel_size,
                                        padding=self.merging_kernel_size // 2, bias=merging_bias)
@@ -160,8 +234,15 @@ class MHSA(nn.Module):
         outputs_stacked = torch.concat(head_outputs, dim=1)
         result = self.proj_merge(outputs_stacked)
 
+        # nnd2
+        if self.nnd:
+            result = self.nnd_op(result)
+
         if self.residual:
             result = result + x
+        # old nnd
+        # if self.nnd:
+        #     result = self.nnd_op(result)
 
         return result
 
@@ -198,7 +279,15 @@ class MHSA_interconnect(nn.Module):
                  projection_kernel_size: int = 1,
                  merging_kernel_size: int = 1,
                  merging_bias: bool = True,
-                 qk_norm_type: str = "l2"
+                 qk_norm_type: str = "l2",
+                 save_attention: bool = False,
+                 nnd: bool = False,
+                 norm_op: Union[None, Type[nn.Module]] = None,
+                 norm_op_kwargs: dict = None,
+                 dropout_op: Union[None, Type[_DropoutNd]] = None,
+                 dropout_op_kwargs: dict = None,
+                 nonlin: Union[None, Type[torch.nn.Module]] = None,
+                 nonlin_kwargs: dict = None
                  ):
         super(MHSA_interconnect, self).__init__()
         if isinstance(active_stages, int):
@@ -216,13 +305,24 @@ class MHSA_interconnect(nn.Module):
         self.dv = dv
         self.dk = dk
 
+        #for nnd
+        norm_op = encoder.norm_op if norm_op is None else norm_op
+        norm_op_kwargs = encoder.norm_op_kwargs if norm_op_kwargs is None else norm_op_kwargs
+        dropout_op = encoder.dropout_op if dropout_op is None else dropout_op
+        dropout_op_kwargs = encoder.dropout_op_kwargs if dropout_op_kwargs is None else dropout_op_kwargs
+        nonlin = encoder.nonlin if nonlin is None else nonlin
+        nonlin_kwargs = encoder.nonlin_kwargs if nonlin_kwargs is None else nonlin_kwargs
+
         self.ops = [nn.Identity() for i in self.features_per_stage]
         for i in self.active_stages:
             self.ops[i] = MHSA(self.features_per_stage[i], self.conv_op, num_heads=self.num_heads, dv=self.dv,
                                dk=self.dk, residual=self.residual, position_encoding=self.position_encoding,
                                projection_kernel_size=self.projection_kernel_size,
                                merging_kernel_size=self.merging_kernel_size, merging_bias=merging_bias,
-                               qk_norm_type=qk_norm_type)
+                               qk_norm_type=qk_norm_type, save_attention=save_attention,
+                               nnd=nnd, norm_op=norm_op, norm_op_kwargs=norm_op_kwargs,
+                               dropout_op=dropout_op, dropout_op_kwargs=dropout_op_kwargs, nonlin=nonlin, nonlin_kwargs=
+                               nonlin_kwargs)
         self.ops = nn.ModuleList(self.ops)
 
     def forward(self, skips):
@@ -271,6 +371,6 @@ if __name__ == '__main__':
                               nonlin=nn.ReLU,
                               return_skips=True, disable_default_stem=False, stem_channels=None)
     print(encoder)
-    mhsa_ic = MHSA_interconnect(encoder, (-1, -2))
+    mhsa_ic = MHSA_interconnect(encoder, (-1, -2), nnd=True)
     print(mhsa_ic)
     [print(name) for name, _ in mhsa_ic.named_children()]

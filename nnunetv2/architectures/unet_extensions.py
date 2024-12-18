@@ -39,7 +39,9 @@ class ResEncUNetWithSA(nn.Module):
                  sa_stage_indices: Union[int, List[int], Tuple[int, ...]] = -1,
                  residual_sa: bool = True,
                  sa_merging_bias: bool = True,
-                 qk_norm_type: str = "l2"
+                 qk_norm_type: str = "l2",
+                 sa_nnd: bool = False,
+                 save_attention: bool = False
                  ):
         super().__init__()
         if isinstance(n_blocks_per_stage, int):
@@ -59,7 +61,7 @@ class ResEncUNetWithSA(nn.Module):
                                        return_skips=True, disable_default_stem=False, stem_channels=stem_channels)
         self.interconnect = MHSA_interconnect(self.encoder, active_stages=sa_stage_indices, num_heads=num_sa_heads,
                                               residual=residual_sa, merging_bias=sa_merging_bias,
-                                              qk_norm_type=qk_norm_type)
+                                              qk_norm_type=qk_norm_type, nnd=sa_nnd, save_attention=save_attention)
         self.decoder = UNetDecoder(self.encoder, num_classes, n_conv_per_stage_decoder, deep_supervision)
         print("Active SA stages:", sa_stage_indices)
         print("Num SA heads:", num_sa_heads)
