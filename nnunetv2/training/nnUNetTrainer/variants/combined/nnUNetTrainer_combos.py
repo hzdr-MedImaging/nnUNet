@@ -13,6 +13,14 @@ class nnUNetTrainer_noSmooth(nnUNetTrainerDiceCELoss_noSmooth):
                  device: torch.device = torch.device('cuda')):
         super().__init__(plans, configuration, fold, dataset_json, unpack_dataset, device)
 
+
+class nnUNetTrainer_noSmooth_2000epoch(nnUNetTrainerDiceCELoss_noSmooth):
+    def __init__(self, plans: dict, configuration: str, fold: int, dataset_json: dict, unpack_dataset: bool = True,
+                 device: torch.device = torch.device('cuda')):
+        super().__init__(plans, configuration, fold, dataset_json, unpack_dataset, device)
+        self.num_epochs = 2000
+
+
 class nnUNetTrainer_noSmooth_500epoch(nnUNetTrainerDiceCELoss_noSmooth):
     def __init__(self, plans: dict, configuration: str, fold: int, dataset_json: dict, unpack_dataset: bool = True,
                  device: torch.device = torch.device('cuda')):
@@ -86,6 +94,14 @@ class nnUNetTrainer_noSmooth_probOS33(nnUNetTrainer_probabilisticOversampling, n
                  device: torch.device = torch.device('cuda')):
         super().__init__(plans, configuration, fold, dataset_json, unpack_dataset, device)
         self.oversample_foreground_percent = 0.33
+
+
+class nnUNetTrainer_noSmooth_probOS67(nnUNetTrainer_probabilisticOversampling, nnUNetTrainerDiceCELoss_noSmooth):
+    def __init__(self, plans: dict, configuration: str, fold: int, dataset_json: dict, unpack_dataset: bool = True,
+                 device: torch.device = torch.device('cuda')):
+        super().__init__(plans, configuration, fold, dataset_json, unpack_dataset, device)
+        self.oversample_foreground_percent = 0.67
+
 
 class nnUNetTrainer_noSmooth_betaBinomDS_probOS33(nnUNetTrainer_noSmooth_probOS33, nnUNetTrainer_betaBinomDS):
     def __init__(self, plans: dict, configuration: str, fold: int, dataset_json: dict, unpack_dataset: bool = True,
