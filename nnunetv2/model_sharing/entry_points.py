@@ -52,10 +52,16 @@ def export_pretrained_model_entry():
     parser.add_argument('-f', required=False, nargs='+', type=str, default=(0, 1, 2, 3, 4), help='list of fold ids')
     parser.add_argument('-chk', required=False, nargs='+', type=str, default=('checkpoint_final.pth', ),
                         help='Lis tof checkpoint names to export. Default: checkpoint_final.pth')
+    parser.add_argument('-nd', required=False, type=str, default=None, help='New dataset name (override)')
+    parser.add_argument('-ntr', required=False, type=str, default=None, help='New trainer class (override)')
+    parser.add_argument('-nff', required=False, type=str, default=None, help='New file format (override). Supported list: "nifti"')
     parser.add_argument('--not_strict', action='store_false', default=False, required=False, help='Set this to allow missing folds and/or configurations')
     parser.add_argument('--exp_cv_preds', action='store_true', required=False, help='Set this to export the cross-validation predictions as well')
+    parser.add_argument('--strip', action='store_true', default=False, required=False,
+                        help='Set this to strip all unnecessary files from output')
     args = parser.parse_args()
 
     export_pretrained_model(dataset_name_or_id=args.d, output_file=args.o, configurations=args.c, trainer=args.tr,
                             plans_identifier=args.p, folds=args.f, strict=not args.not_strict, save_checkpoints=args.chk,
-                            export_crossval_predictions=args.exp_cv_preds)
+                            export_crossval_predictions=args.exp_cv_preds, stripped=args.strip,
+                            new_dataset_name=args.nd, new_trainer=args.ntr, new_file_format=args.nff)
