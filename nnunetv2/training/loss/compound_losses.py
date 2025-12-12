@@ -8,7 +8,7 @@ from torch import nn
 
 class DC_and_CE_loss(nn.Module):
     def __init__(self, soft_dice_kwargs, ce_kwargs, weight_ce=1, weight_dice=1, ignore_label=None,
-                 dice_class=SoftDiceLoss, edge_weight=None):
+                 dice_class=SoftDiceLoss, edge_weight=None, edge_tf="lin", fg_weight=1):
         """
         Weights for CE and Dice do not need to sum to one. You can set whatever you want.
         :param soft_dice_kwargs:
@@ -25,22 +25,42 @@ class DC_and_CE_loss(nn.Module):
         if edge_weight is not None:
             ce_kwargs['reduction'] = 'none'
 
+            if edge_weight == 0:
+                edge_tf = "lin"
+
+            if edge_tf == "lin":
+                self.edge_tfun = lambda x: x
+            elif edge_tf == "sqr":
+                self.edge_tfun = lambda x: x.square()
+            elif edge_tf == "exp":
+                self.edge_tfun = lambda x: torch.pow(2, x - 1)
+            elif edge_tf == "sin":
+                self.edge_tfun = lambda x: 1 + torch.sin((x - 1) / edge_weight * torch.pi/2)
+            else:
+                raise NotImplementedError
+
         self.weight_dice = weight_dice
         self.weight_ce = weight_ce
         self.ignore_label = ignore_label
         self.edge_size = edge_weight
+        self.fg_weight = fg_weight
+
 
         self.ce = RobustCrossEntropyLoss(**ce_kwargs)
         self.dc = dice_class(apply_nonlin=softmax_helper_dim1, **soft_dice_kwargs)
 
 
     def get_edge_weights(self, mask: torch.Tensor, edge_size: int):
+        if edge_size is None or edge_size == 0:
+            return torch.ones_like(mask)
+
         if mask.ndim == 4:
             pool_op = nn.MaxPool2d(3, stride=1, padding=1)
         elif mask.ndim == 5:
             pool_op = nn.MaxPool3d(3, stride=1, padding=1)
         else:
             raise NotImplementedError
+
         weights = torch.ones_like(mask) # start flat
         mask_expand = mask * 1.0
         mask_shrink = mask_expand
@@ -71,7 +91,7 @@ class DC_and_CE_loss(nn.Module):
             target_dice = target
             mask = None
 
-        if self.edge_size is None:
+        if self.edge_size is None and self.fg_weight is None:
             dc_loss = self.dc(net_output, target_dice, loss_mask=mask) \
                 if self.weight_dice != 0 else 0
             ce_loss = self.ce(net_output, target[:, 0]) \
@@ -79,7 +99,19 @@ class DC_and_CE_loss(nn.Module):
         else:
             # class 0 has to be background. Only edge between bg and fg is enhanced, not edges between classes
             fg_mask = target_dice > 0.5
-            weights = self.get_edge_weights(fg_mask, self.edge_size)
+            # fg_mask = torch.logical_or(fg_mask, net_output > 0.5)
+
+            weights = torch.ones_like(target_dice)
+            # weight edges
+            if self.edge_size is not None:
+                weights_eg = self.get_edge_weights(fg_mask, self.edge_size)
+                weights_eg = self.edge_tfun(weights)
+                weights = weights * weights_eg
+
+            # weight the fg voxels
+            if self.fg_weight is not None and self.fg_weight != 1:
+                weights_fg = fg_mask * (self.fg_weight - 1) + 1
+                weights = weights * weights_fg
 
             # add masking
             if mask is not None:
@@ -100,7 +132,7 @@ class DC_and_CE_loss(nn.Module):
 
 class DC_and_BCE_loss(nn.Module):
     def __init__(self, bce_kwargs, soft_dice_kwargs, weight_ce=1, weight_dice=1, use_ignore_label: bool = False,
-                 dice_class=MemoryEfficientSoftDiceLoss, edge_weight=None):
+                 dice_class=MemoryEfficientSoftDiceLoss, edge_weight=None, edge_tf="lin", fg_weight=None):
         """
         DO NOT APPLY NONLINEARITY IN YOUR NETWORK!
 
@@ -116,6 +148,8 @@ class DC_and_BCE_loss(nn.Module):
             bce_kwargs['reduction'] = 'none'
 
         if edge_weight is not None:
+            raise NotImplementedError
+        if fg_weight is not None:
             raise NotImplementedError
 
         self.weight_dice = weight_dice

@@ -34,6 +34,9 @@ class nnUNetTrainerDiceCELoss_noSmooth(nnUNetTrainer):
         # set smooth to 0
         # non standard functionality. This will ensure that it will not break if this parameter is missing in config
         edge_weight = self.configuration_manager.configuration.get('edge_weight')
+        edge_tf = self.configuration_manager.configuration.get('edge_tf')
+        edge_tf = "lin" if edge_tf is None else edge_tf
+        fg_weight = self.configuration_manager.configuration.get('fg_weight')
 
         if self.label_manager.has_regions:
             loss = DC_and_BCE_loss({},
@@ -41,13 +44,17 @@ class nnUNetTrainerDiceCELoss_noSmooth(nnUNetTrainer):
                                     'do_bg': True, 'smooth': 0, 'ddp': self.is_ddp},
                                    use_ignore_label=self.label_manager.ignore_label is not None,
                                    dice_class=MemoryEfficientSoftDiceLoss,
-                                   edge_weight=edge_weight)
+                                   edge_weight=edge_weight,
+                                   edge_tf=edge_tf,
+                                   fg_weight = fg_weight)
         else:
             loss = DC_and_CE_loss({'batch_dice': self.configuration_manager.batch_dice,
                                    'smooth': 0, 'do_bg': False, 'ddp': self.is_ddp}, {}, weight_ce=1, weight_dice=1,
                                   ignore_label=self.label_manager.ignore_label,
                                   dice_class=MemoryEfficientSoftDiceLoss,
-                                  edge_weight=edge_weight)
+                                  edge_weight=edge_weight,
+                                  edge_tf=edge_tf,
+                                  fg_weight = fg_weight)
 
         if self.enable_deep_supervision:
             deep_supervision_scales = self._get_deep_supervision_scales()
