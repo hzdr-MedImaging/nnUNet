@@ -132,7 +132,9 @@ class DefaultPreprocessor(object):
 
         # if possible, load seg
         if seg_file is not None:
-            seg, _ = rw.read_seg(seg_file)
+            seg, seg_properties = rw.read_seg(seg_file)
+            # add extra fields from seg_properties to the main dict (e.g. labels). Does not override existing fields.
+            data_properties = seg_properties | data_properties
         else:
             seg = None
 

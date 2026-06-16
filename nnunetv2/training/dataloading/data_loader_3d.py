@@ -1,9 +1,12 @@
+import json
+
 import numpy as np
 import torch
 from threadpoolctl import threadpool_limits
 
 from nnunetv2.training.dataloading.base_data_loader import nnUNetDataLoaderBase
 from nnunetv2.training.dataloading.nnunet_dataset import nnUNetDataset
+from nnunetv2.utilities.plans_handling.plans_handler import PlansManager
 
 
 class nnUNetDataLoader3D(nnUNetDataLoaderBase):
@@ -20,7 +23,8 @@ class nnUNetDataLoader3D(nnUNetDataLoaderBase):
             force_fg = self.get_do_oversample(j)
 
             data, seg, properties = self._data.load_case(i)
-            case_properties.append(properties)
+            if properties['aux_labels'] is not None:
+                case_properties.append(properties['aux_labels'])
 
             # If we are doing the cascade then the segmentation from the previous stage will already have been loaded by
             # self._data.load_case(i) (see nnUNetDataset.load_case)
@@ -68,13 +72,19 @@ class nnUNetDataLoader3D(nnUNetDataLoaderBase):
                         seg_all = torch.stack(segs)
                     del segs, images
 
-            return {'data': data_all, 'target': seg_all, 'keys': selected_keys}
+            return {'data': data_all, 'target': seg_all, 'keys': selected_keys, 'aux_labels': case_properties}
 
-        return {'data': data_all, 'target': seg_all, 'keys': selected_keys}
+        return {'data': data_all, 'target': seg_all, 'keys': selected_keys, 'aux_labels': case_properties}
 
 
 if __name__ == '__main__':
     folder = '/media/fabian/data/nnUNet_preprocessed/Dataset002_Heart/3d_fullres'
-    ds = nnUNetDataset(folder, 0)  # this should not load the properties!
-    dl = nnUNetDataLoader3D(ds, 5, (16, 16, 16), (16, 16, 16), 0.33, None, None)
+    folder = '/pet/projekte/ai/nnUnet/preprocessed/Dataset011_NSCLC/nnUNetPlans_3d_fullres'
+    plans = '/pet/projekte/ai/nnUnet/preprocessed/Dataset011_NSCLC/nnUNetPlans.json'
+    dataset_file = '/pet/projekte/ai/nnUnet/preprocessed/Dataset011_NSCLC/dataset.json'
+    dataset_json = json.load(open(dataset_file))
+    ds = nnUNetDataset(folder, ["pat-00058",])  # this should not load the properties!
+    plans_manager = PlansManager(plans)
+    label_manager = plans_manager.get_label_manager(dataset_json)
+    dl = nnUNetDataLoader3D(ds, 5, (16, 16, 16), (16, 16, 16), label_manager, 0.33, None, None)
     a = next(dl)

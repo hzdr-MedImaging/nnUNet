@@ -11,7 +11,8 @@
 #    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
-
+import json
+from pathlib import Path
 from typing import Tuple, Union, List
 import numpy as np
 
@@ -34,6 +35,7 @@ class PmedIO(BaseReaderWriter):
         images = []
         mheads = []
         sheads = []
+        extras = []
 
         spacings_for_nnunet = []
         for f in image_fnames:
@@ -56,6 +58,13 @@ class PmedIO(BaseReaderWriter):
 
             # transpose image to be consistent with the way SimpleITk reads images. Yeah. Annoying.
             images.append(ecat_image.toarray().transpose((3, 2, 1, 0)))
+
+            aux_file = Path(f).with_suffix('.json')
+            if Path(aux_file).exists():
+                with open(aux_file, "r") as file:
+                    extra_dict = file.read()
+                    extra_dict = json.loads(extra_dict)
+                    extras.append(extra_dict)
 
         if not self._check_all_same([i.shape for i in images]):
             print('ERROR! Not all input images have the same shape!')
@@ -80,6 +89,8 @@ class PmedIO(BaseReaderWriter):
             },
             'spacing': spacings_for_nnunet[0]
         }
+        if len(extras):
+            dict['aux_labels'] = extras[0] # copy all the extras fields to the main dictionary as separate fields
         return stacked_images.astype(np.float32), dict
 
     def read_seg(self, seg_fname: str) -> Tuple[np.ndarray, dict]:
