@@ -3,57 +3,66 @@ from typing import Tuple, Union, Type, List
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.nn.modules.conv import _ConvNd
 from torch.nn.modules.dropout import _DropoutNd
 from torch.nn.modules.linear import Linear
-from torch.nn.modules.pooling import _AdaptiveAvgPoolNd, _AdaptiveMaxPoolNd
 
+import nnunetv2.architectures.operations.global_pooling
 from dynamic_network_architectures.building_blocks.plain_conv_encoder import PlainConvEncoder
 from dynamic_network_architectures.building_blocks.residual_encoders import ResidualEncoder
+from nnunetv2.architectures.operations.combo_operations import LinearNormNonlinDropout
+from nnunetv2.architectures.operations.global_pooling import _GlobalPoolNd
 
 
 class AuxFCHead(nn.Module):
     def __init__(self,
                  encoder: Union[PlainConvEncoder, ResidualEncoder],
                  active_stages: Union[int, List[int], Tuple[int, ...]],
+                 hidden_features: Union[int, List[int], Tuple[int, ...]],
+                 pool_op: Type[_GlobalPoolNd],
+                 pool_kwargs: dict = None,
                  norm_op: Union[None, Type[nn.Module]] = None,
                  norm_op_kwargs: dict = None,
                  dropout_op: Union[None, Type[_DropoutNd]] = None,
                  dropout_op_kwargs: dict = None,
                  nonlin: Union[None, Type[torch.nn.Module]] = None,
                  nonlin_kwargs: dict = None,
-                 pool: Union[Type[_AdaptiveMaxPoolNd], Type[_AdaptiveAvgPoolNd]] = None,
+                 block_grad: bool = False,
                  ):
         super(AuxFCHead, self).__init__()
         if isinstance(active_stages, int):
             active_stages = (active_stages,)
+        if isinstance(active_stages, list):
+            active_stages = tuple(active_stages)
+        if isinstance(hidden_features, int):
+            hidden_features = (hidden_features,)
+        if isinstance(hidden_features, list):
+            hidden_features = tuple(hidden_features)
 
         self.features_per_stage = encoder.output_channels
         self.active_stages = active_stages
-        self.conv_op = encoder.conv_op if conv_op is None else conv_op
+        self.hidden_features = hidden_features
+        self.block_grad = block_grad
 
-        #for nnd
-        norm_op = encoder.norm_op if norm_op is None else norm_op
-        norm_op_kwargs = encoder.norm_op_kwargs if norm_op_kwargs is None else norm_op_kwargs
-        dropout_op = encoder.dropout_op if dropout_op is None else dropout_op
-        dropout_op_kwargs = encoder.dropout_op_kwargs if dropout_op_kwargs is None else dropout_op_kwargs
-        nonlin = encoder.nonlin if nonlin is None else nonlin
-        nonlin_kwargs = encoder.nonlin_kwargs if nonlin_kwargs is None else nonlin_kwargs
+        self.total_input_features = sum((self.features_per_stage[i] for i in active_stages))
+        self.input_features = (self.total_input_features,) +  self.hidden_features[:-1]
 
-        self.ops = [nn.Identity() for i in self.features_per_stage]
-        for i in self.active_stages:
-            self.ops[i] = MHSA(self.features_per_stage[i], self.conv_op, num_heads=self.num_heads, dv=self.dv,
-                               dk=self.dk, residual=self.residual, position_encoding=self.position_encoding,
-                               projection_kernel_size=self.projection_kernel_size,
-                               merging_kernel_size=self.merging_kernel_size, merging_bias=merging_bias,
-                               qk_norm_type=qk_norm_type, save_attention=save_attention,
-                               nnd=nnd, norm_op=norm_op, norm_op_kwargs=norm_op_kwargs,
-                               dropout_op=dropout_op, dropout_op_kwargs=dropout_op_kwargs, nonlin=nonlin, nonlin_kwargs=
-                               nonlin_kwargs)
-        self.ops = nn.ModuleList(self.ops)
+        pool_kwargs = {} if pool_kwargs is None else pool_kwargs
+        self.pool_ops = nn.ModuleList([pool_op(**pool_kwargs) for stage in active_stages])
+        self.fc_ops = nn.ModuleList([
+            LinearNormNonlinDropout(in_features, out_features,
+                                    norm_op, norm_op_kwargs,
+                                    dropout_op, dropout_op_kwargs,
+                                    nonlin, nonlin_kwargs)
+            for in_features, out_features in zip(self.input_features, hidden_features)])
+        self.final_fc = Linear(hidden_features[-1], 1, bias=True)
+        self.fc_net = nn.Sequential(*self.fc_ops, self.final_fc)
 
     def forward(self, skips):
-        return [op(skip) for op, skip in zip(self.ops, skips)]
+        if self.block_grad:
+            skips = [skip.detach() for skip in skips]
+        feature_list = [self.pool_ops[i_pool](skips[i_stage]) for i_pool, i_stage in enumerate(self.active_stages)]
+        feature_vector = torch.cat(feature_list, 1)
+        return self.fc_net(feature_vector)
 
 
     def compute_memory(self, input_size):
@@ -62,17 +71,30 @@ class AuxFCHead(nn.Module):
         :param input_size:
         :return:
         """
-        # first we need to compute the skip sizes.
-        skip_sizes = []
-        for s in range(len(encoder.strides)):
-            skip_sizes.append([i // j for i, j in zip(input_size, encoder.strides[s])])
-            input_size = skip_sizes[-1]
-        print(skip_sizes)
-
-        assert len(skip_sizes) == len(self.features_per_stage)
-
         # go over active stages and sum up the memory
         output = np.int64(0)
-        for s in self.active_stages:
-            output += self.ops[s].compute_memory(skip_sizes[s])
+        # calculation missing! Probably not important though...
         return output
+
+if __name__ == '__main__':
+    data = torch.rand((3, 2, 64, 32, 32))
+
+    encoder = ResidualEncoder(2, 6, (32, 64, 128, 256, 320, 320), nn.Conv3d, 3,
+                              ((1, 1, 1), (2, 2, 2), (2, 2, 2), (2, 2, 2), (2, 2, 2), (2, 2, 2)),
+                              (1, 3, 4, 6, 6, 6), True, nn.modules.instancenorm.InstanceNorm3d,
+                              nonlin=nn.ReLU,
+                              return_skips=True, disable_default_stem=False, stem_channels=None)
+
+    aux_head = AuxFCHead(encoder = encoder, active_stages=[3,5], hidden_features=(16,64),
+                         pool_op=nnunetv2.architectures.operations.global_pooling.GlobalLpPoolTrainable3d, pool_kwargs={'p': 3},
+                         norm_op=nn.BatchNorm1d, norm_op_kwargs=None,
+                         dropout_op=nn.Dropout, dropout_op_kwargs={'p': 0.1, 'inplace': True},
+                         nonlin=nn.ReLU, nonlin_kwargs=None,
+                         block_grad=True)
+
+    #print(encoder)
+    print(aux_head)
+    [print(name) for name, _ in aux_head.named_children()]
+
+    out = aux_head(encoder(data))
+    print(out)

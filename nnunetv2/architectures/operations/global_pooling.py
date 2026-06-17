@@ -60,9 +60,9 @@ class GlobalLpPool3d(_GlobalLpPoolNd):
 
 # Trainable LP-pool family
 class _GlobalLpPoolTrainableNd(_GlobalPoolNd):
-    def __init__(self, p_init = 2.0) -> None:
+    def __init__(self, p = 2.0) -> None:
         super().__init__()
-        self.p = nn.Parameter(torch.tensor(float(p_init)))
+        self.p = nn.Parameter(torch.tensor(float(p)))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return (x.abs() + 1e-8).pow(self.p).mean(dim=self.pool_dims).pow(1 / self.p)
