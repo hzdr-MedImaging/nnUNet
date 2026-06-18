@@ -10,7 +10,9 @@ from dynamic_network_architectures.building_blocks.residual_encoders import Resi
 from dynamic_network_architectures.building_blocks.unet_decoder import UNetDecoder
 from dynamic_network_architectures.initialization.weight_init import InitWeights_He
 from dynamic_network_architectures.initialization.weight_init import init_last_bn_before_add_to_0
+from nnunetv2.architectures.blocks.aux_heads import AuxMLPHead
 from nnunetv2.architectures.blocks.self_attention import MHSA_interconnect
+from nnunetv2.architectures.operations.global_pooling import GlobalAvgPool3d, _GlobalPoolNd
 
 
 class ResEncUNetWithSA(nn.Module):
@@ -187,6 +189,20 @@ class ResEncUNetAuxTask(nn.Module):
                  block: Union[Type[BasicBlockD], Type[BottleneckD]] = BasicBlockD,
                  bottleneck_channels: Union[int, List[int], Tuple[int, ...]] = None,
                  stem_channels: int = None,
+                 aux_active_stages: Union[int, List[int], Tuple[int, ...]] = -1,
+                 aux_hidden_features: Union[int, List[int], Tuple[int, ...]] = 64,
+                 aux_output_logits: int = 1,
+                 aux_pool_op: Type[_GlobalPoolNd] = GlobalAvgPool3d,
+                 aux_pool_op_kwargs: dict = None,
+                 aux_norm_op: Union[None, Type[nn.Module]] = None,
+                 aux_norm_op_kwargs: dict = None,
+                 aux_dropout_op: Union[None, Type[_DropoutNd]] = None,
+                 aux_dropout_op_kwargs: dict = None,
+                 aux_nonlin: Union[None, Type[torch.nn.Module]] = None,
+                 aux_nonlin_kwargs: dict = None,
+                 aux_final_act: Union[None, Type[nn.Module]] = None,
+                 aux_final_act_kwargs: dict = None,
+                 aux_block_grad: bool = False,
                  ):
         super().__init__()
         if isinstance(n_blocks_per_stage, int):
@@ -204,21 +220,36 @@ class ResEncUNetAuxTask(nn.Module):
                                        n_blocks_per_stage, conv_bias, norm_op, norm_op_kwargs, dropout_op,
                                        dropout_op_kwargs, nonlin, nonlin_kwargs, block, bottleneck_channels,
                                        return_skips=True, disable_default_stem=False, stem_channels=stem_channels)
-        self.aux_head = MHSA_interconnect(self.encoder, active_stages=sa_stage_indices, num_heads=num_sa_heads,
-                                              residual=residual_sa, merging_bias=sa_merging_bias,
-                                              qk_norm_type=qk_norm_type, nnd=sa_nnd, save_attention=save_attention)
+        self.aux_head = AuxMLPHead(encoder=self.encoder, active_stages=aux_active_stages,
+                                   hidden_features=aux_hidden_features, output_logits=aux_output_logits,
+                                   pool_op=aux_pool_op, pool_op_kwargs=aux_pool_op_kwargs,
+                                   norm_op=aux_norm_op, norm_op_kwargs=aux_norm_op_kwargs,
+                                   dropout_op=aux_dropout_op, dropout_op_kwargs=aux_dropout_op_kwargs,
+                                   nonlin=aux_nonlin, nonlin_kwargs=aux_nonlin_kwargs,
+                                   final_act=aux_final_act, final_act_kwargs=aux_final_act_kwargs,
+                                   block_grad=aux_block_grad)
         self.decoder = UNetDecoder(self.encoder, num_classes, n_conv_per_stage_decoder, deep_supervision)
-        print("Active SA stages:", sa_stage_indices)
-        print("Num SA heads:", num_sa_heads)
 
-    def forward(self, x):
+        print("Features extracted from stages:", aux_active_stages)
+        print("Aux MLP hidden features:", aux_hidden_features)
+        print("Aux MLP output logits:", aux_output_logits)
+        print("Aux MLP block grad:", aux_block_grad)
+
+    def forward(self, x) -> dict:
         skips = self.encoder(x)
-        skips = self.interconnect(skips)
-        #[print(A.shape) for att_list in self.interconnect.get_all_attention_mats() for A in att_list]
-        return self.decoder(skips)
+        aux_out = self.aux_head(skips)
+        seg_out = self.decoder(skips)
+        return {"seg": seg_out, "aux": aux_out}
 
-    def get_all_attention_maps(self):
-        return self.interconnect.get_all_attention_maps()
+    def forward_aux(self, x):
+        skips = self.encoder(x)
+        aux_out = self.aux_head(skips)
+        return aux_out
+
+    def forward_seg(self, x):
+        skips = self.encoder(x)
+        seg_out = self.decoder(skips)
+        return seg_out
 
     def compute_conv_feature_map_size(self, input_size):
         assert len(input_size) == convert_conv_op_to_dim(
@@ -235,24 +266,42 @@ class ResEncUNetAuxTask(nn.Module):
 
 
 if __name__ == '__main__':
+    # data = torch.rand((1, 4, 128, 128, 128))
+    #
+    # model = ResEncUNetWithSA(4, 6, (32, 64, 125, 256, 320, 320), nn.Conv3d, 3, (1, 2, 2, 2, 2, 2), (2, 2, 2, 2, 2, 2),
+    #                          3,
+    #                          (2, 2, 2, 2, 2), False, nn.BatchNorm3d, None, None, None, nn.ReLU, deep_supervision=True,
+    #                          sa_stage_indices=(-1, -2))
+    #
+    # out = model(data)[0]
+    #
+    # print(out.shape, "->", model.compute_conv_feature_map_size(data.shape[2:]))
+    #
+    # data = torch.rand((1, 4, 512, 512))
+    #
+    # model = ResEncUNetWithSA(4, 8, (32, 64, 125, 256, 512, 512, 512, 512), nn.Conv2d, 3, (1, 2, 2, 2, 2, 2, 2, 2),
+    #                          (2, 2, 2, 2, 2, 2, 2, 2), 3,
+    #                          (2, 2, 2, 2, 2, 2, 2), False, nn.BatchNorm2d, None, None, None, nn.ReLU,
+    #                          deep_supervision=True)
+    #
+    # out = model(data)[0]
+    #
+    # print(out.shape, "->", model.compute_conv_feature_map_size(data.shape[2:]))
+
     data = torch.rand((1, 4, 128, 128, 128))
 
-    model = ResEncUNetWithSA(4, 6, (32, 64, 125, 256, 320, 320), nn.Conv3d, 3, (1, 2, 2, 2, 2, 2), (2, 2, 2, 2, 2, 2),
+    model = ResEncUNetAuxTask(4, 6, (32, 64, 125, 256, 320, 320), nn.Conv3d, 3, (1, 2, 2, 2, 2, 2), (2, 2, 2, 2, 2, 2),
                              3,
                              (2, 2, 2, 2, 2), False, nn.BatchNorm3d, None, None, None, nn.ReLU, deep_supervision=True,
-                             sa_stage_indices=(-1, -2))
+                              aux_active_stages=[-3, -1], aux_hidden_features=(16, 64), aux_output_logits=1,
+                              aux_pool_op=GlobalAvgPool3d, aux_pool_op_kwargs=None,
+                              aux_norm_op=nn.LayerNorm, aux_norm_op_kwargs=None,
+                              aux_dropout_op=nn.Dropout, aux_dropout_op_kwargs={'p': 0.1, 'inplace': True},
+                              aux_nonlin=nn.LeakyReLU, aux_nonlin_kwargs=None,
+                              aux_final_act=nn.Sigmoid, aux_final_act_kwargs=None,
+                              aux_block_grad=True
+                              )
 
-    out = model(data)[0]
+    pred = model(data)
 
-    print(out.shape, "->", model.compute_conv_feature_map_size(data.shape[2:]))
-
-    data = torch.rand((1, 4, 512, 512))
-
-    model = ResEncUNetWithSA(4, 8, (32, 64, 125, 256, 512, 512, 512, 512), nn.Conv2d, 3, (1, 2, 2, 2, 2, 2, 2, 2),
-                             (2, 2, 2, 2, 2, 2, 2, 2), 3,
-                             (2, 2, 2, 2, 2, 2, 2), False, nn.BatchNorm2d, None, None, None, nn.ReLU,
-                             deep_supervision=True)
-
-    out = model(data)[0]
-
-    print(out.shape, "->", model.compute_conv_feature_map_size(data.shape[2:]))
+    print(pred['seg'][0].shape, "aux:", pred['aux'])
