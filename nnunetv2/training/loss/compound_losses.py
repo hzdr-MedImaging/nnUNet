@@ -285,3 +285,36 @@ class DC_and_topk_loss(nn.Module):
 
         result = self.weight_ce * ce_loss + self.weight_dice * dc_loss
         return result
+
+class CompositeLoss(nn.Module):
+    def __init__(self, losses, weights=None):
+        super(CompositeLoss, self).__init__()
+        assert isinstance(losses, list), "CompositeLoss class expects a list of losses for init."
+        self.losses = losses
+        if weights is None:
+            weights = [1] * len(losses)
+        assert len(losses) == len(weights), "CompositeLoss: len(losses) must equal len(weights)"
+        self.weights = weights
+
+    def forward(self, *arg_list):
+        outputs = [loss(*args) for loss, args in zip(self.losses, arg_list)]
+        return sum([output * weight for output, weight in zip(outputs, self.weights)])
+
+if __name__ == '__main__':
+    i1 = torch.randn(5, 3)
+    i2 = torch.randn(5, 1)
+    t1 = torch.randn(5)
+    t2 = torch.randn(5, 1)
+
+    i1 = torch.log(torch.softmax(i1, dim=1))
+    t1 = torch.round(torch.sigmoid(t1 * 3) * 2).long()
+    print(i1)
+    print(t1)
+
+    loss1 = nn.NLLLoss()
+    loss2 = nn.BCEWithLogitsLoss()
+    loss = CompositeLoss([loss1, loss2], weights=[1, 2])
+
+    print(loss1(i1, t1), loss2(i2, t2))
+    out = loss([i1, t1], [i2, t2])
+    print(out)

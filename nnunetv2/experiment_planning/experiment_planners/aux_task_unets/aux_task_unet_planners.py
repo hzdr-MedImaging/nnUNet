@@ -82,6 +82,7 @@ class ResEncUNetAuxTaskPlanner(ResEncUNetPlanner):
             'aux_block_grad': False,
         })
         plan['architecture']['_kw_requires_import'] += ['aux_pool_op', 'aux_norm_op', 'aux_dropout_op', 'aux_nonlin']
+        plan['aux_loss_weight'] = 1
 
         return plan
 

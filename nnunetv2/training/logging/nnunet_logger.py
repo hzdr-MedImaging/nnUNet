@@ -25,6 +25,10 @@ class nnUNetLogger(object):
             'epoch_start_timestamps': list(),
             'epoch_end_timestamps': list()
         }
+        self.optional_logging = {
+            'mean_accuracy' : list(),
+            'ema_accuracy' : list(),
+        }
         self.verbose = verbose
         # shut up, this logging is great
 
@@ -51,6 +55,24 @@ class nnUNetLogger(object):
                 if len(self.my_fantastic_logging['ema_fg_dice']) > 0 else value
             self.log('ema_fg_dice', new_ema_pseudo_dice, epoch)
 
+    def log_optional(self, key, value, epoch: int):
+        """
+        sometimes shit gets messed up. We try to catch that here
+        """
+        if self.verbose: print(f'logging {key}: {value} for epoch {epoch}')
+
+        assert key in self.optional_logging.keys() and isinstance(self.optional_logging[key], list), \
+            'This function is only intended to log stuff to lists and to have one entry per epoch'
+        assert len(self.optional_logging[key]) == epoch, 'The length of the logger list is not consistent with '\
+                                                         'current epoch'
+        self.optional_logging[key].append(value)
+
+        # handle the ema_accuracy special case! It is automatically logged when we add a new mean_accuracy
+        if key == 'mean_accuracy':
+            new_ema_accuracy = self.optional_logging['ema_accuracy'][epoch - 1] * 0.9 + 0.1 * value \
+                if len(self.optional_logging['ema_accuracy']) > 0 else value
+            self.log('ema_accuracy', new_ema_accuracy, epoch)
+
     def plot_progress_png(self, output_folder):
         # we infer the epoch form our internal logging
         epoch = min([len(i) for i in self.my_fantastic_logging.values()]) - 1  # lists of epoch 0 have len 1
@@ -71,6 +93,15 @@ class nnUNetLogger(object):
         ax2.set_ylabel("pseudo dice")
         ax.legend(loc=(0, 1))
         ax2.legend(loc=(0.2, 1))
+
+        if len(self.optional_logging['mean_accuracy']) > 0:
+            ax2.plot(x_values, self.optional_logging['mean_accuracy'][:epoch + 1], color='m', ls='dotted',
+                     label="accuracy",
+                     linewidth=3)
+            ax2.plot(x_values, self.optional_logging['ema_accuracy'][:epoch + 1], color='m', ls='-',
+                     label="accuracy (mov. avg.)",
+                     linewidth=4)
+            ax2.set_ylabel("pseudo dice/accuracy")
 
         # epoch times to see whether the training speed is consistent (inconsistent means there are other jobs
         # clogging up the system)
@@ -97,7 +128,18 @@ class nnUNetLogger(object):
         plt.close()
 
     def get_checkpoint(self):
-        return self.my_fantastic_logging
+        total_logging = self.my_fantastic_logging
+        if len(self.optional_logging['mean_accuracy']) > 0:
+            # merge all logging lists
+            total_logging = total_logging | self.optional_logging
+        return total_logging
 
     def load_checkpoint(self, checkpoint: dict):
-        self.my_fantastic_logging = checkpoint
+        if 'mean_accuracy' in self.my_fantastic_logging.keys():
+            # split all loging lists
+            self.my_fantastic_logging = {key: value for key, value in checkpoint.items() if
+                                         key in self.my_fantastic_logging.keys()}
+            self.optional_logging = {key: value for key, value in checkpoint.items() if
+                                         key in self.optional_logging.keys()}
+        else:
+            self.my_fantastic_logging = checkpoint
