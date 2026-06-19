@@ -71,7 +71,7 @@ class nnUNetLogger(object):
         if key == 'mean_accuracy':
             new_ema_accuracy = self.optional_logging['ema_accuracy'][epoch - 1] * 0.9 + 0.1 * value \
                 if len(self.optional_logging['ema_accuracy']) > 0 else value
-            self.log('ema_accuracy', new_ema_accuracy, epoch)
+            self.log_optional('ema_accuracy', new_ema_accuracy, epoch)
 
     def plot_progress_png(self, output_folder):
         # we infer the epoch form our internal logging
@@ -102,6 +102,7 @@ class nnUNetLogger(object):
                      label="accuracy (mov. avg.)",
                      linewidth=4)
             ax2.set_ylabel("pseudo dice/accuracy")
+            ax2.legend(loc=(0.2, 1))
 
         # epoch times to see whether the training speed is consistent (inconsistent means there are other jobs
         # clogging up the system)

@@ -13,7 +13,7 @@ from nnunetv2.experiment_planning.experiment_planners.residual_unets.residual_en
 class ResEncUNetAuxTaskPlanner(ResEncUNetPlanner):
     def __init__(self, dataset_name_or_id: Union[str, int],
                  gpu_memory_target_in_gb: float = 8,
-                 preprocessor_name: str = 'DefaultPreprocessor', plans_name: str = 'nnUNetResEncUNetWithSAPlans',
+                 preprocessor_name: str = 'DefaultPreprocessor', plans_name: str = 'nnUNetResEncAuxTaskUNetPlans',
                  overwrite_target_spacing: Union[List[float], Tuple[float, ...]] = None,
                  suppress_transpose: bool = False):
         super().__init__(dataset_name_or_id, gpu_memory_target_in_gb, preprocessor_name, plans_name,
@@ -63,7 +63,6 @@ class ResEncUNetAuxTaskPlanner(ResEncUNetPlanner):
         norm = nn.LayerNorm
         dropout = nn.Dropout1d
         nonlin = nn.LeakyReLU
-        final_act = nn.Sigmoid
 
         plan['architecture']['arch_kwargs'].update({
             'aux_active_stages': -1,
@@ -77,11 +76,12 @@ class ResEncUNetAuxTaskPlanner(ResEncUNetPlanner):
             'aux_dropout_op_kwargs': {'p': 0.1},
             'aux_nonlin': nonlin.__module__ + '.' + nonlin.__name__,
             'aux_nonlin_kwargs': {'inplace': True},
-            'aux_final_act': final_act.__module__ + '.' + final_act.__name__,
+            'aux_final_act': None,
             'aux_final_act_kwargs': None,
             'aux_block_grad': False,
         })
-        plan['architecture']['_kw_requires_import'] += ['aux_pool_op', 'aux_norm_op', 'aux_dropout_op', 'aux_nonlin']
+        plan['architecture']['_kw_requires_import'] += ('aux_pool_op', 'aux_norm_op', 'aux_dropout_op',
+                                                        'aux_nonlin', 'aux_final_act')
         plan['aux_loss_weight'] = 1
 
         return plan
@@ -93,7 +93,7 @@ class nnUNetPlannerResEncAuxM(ResEncUNetAuxTaskPlanner):
     """
     def __init__(self, dataset_name_or_id: Union[str, int],
                  gpu_memory_target_in_gb: float = 8,
-                 preprocessor_name: str = 'DefaultPreprocessor', plans_name: str = 'nnUNetResEncSAUNetMPlans',
+                 preprocessor_name: str = 'DefaultPreprocessor', plans_name: str = 'nnUNetResEncAuxTaskUNetMPlans',
                  overwrite_target_spacing: Union[List[float], Tuple[float, ...]] = None,
                  suppress_transpose: bool = False):
         if gpu_memory_target_in_gb != 8:
@@ -118,7 +118,7 @@ class nnUNetPlannerResEncAuxL(ResEncUNetAuxTaskPlanner):
     """
     def __init__(self, dataset_name_or_id: Union[str, int],
                  gpu_memory_target_in_gb: float = 24,
-                 preprocessor_name: str = 'DefaultPreprocessor', plans_name: str = 'nnUNetResEncSAUNetLPlans',
+                 preprocessor_name: str = 'DefaultPreprocessor', plans_name: str = 'nnUNetResEncAuxTaskUNetLPlans',
                  overwrite_target_spacing: Union[List[float], Tuple[float, ...]] = None,
                  suppress_transpose: bool = False):
         if gpu_memory_target_in_gb != 24:
@@ -142,7 +142,7 @@ class nnUNetPlannerResEncAuxXL(ResEncUNetAuxTaskPlanner):
     """
     def __init__(self, dataset_name_or_id: Union[str, int],
                  gpu_memory_target_in_gb: float = 40,
-                 preprocessor_name: str = 'DefaultPreprocessor', plans_name: str = 'nnUNetResEncSAUNetXLPlans',
+                 preprocessor_name: str = 'DefaultPreprocessor', plans_name: str = 'nnUNetResEncAuxTaskUNetXLPlans',
                  overwrite_target_spacing: Union[List[float], Tuple[float, ...]] = None,
                  suppress_transpose: bool = False):
         if gpu_memory_target_in_gb != 40:

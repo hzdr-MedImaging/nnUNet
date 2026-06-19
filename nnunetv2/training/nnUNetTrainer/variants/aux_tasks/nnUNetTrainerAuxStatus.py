@@ -24,7 +24,7 @@ class nnUNetTrainerAuxStatus(nnUNetTrainer):
         # convert list to tensor of size (n,1)
         aux_labels = [x['status'] for x in aux_labels]
         aux_target = torch.tensor(aux_labels)
-        aux_target = aux_target.unsqueeze(1)
+        aux_target = aux_target.unsqueeze(1).float()
 
         data = data.to(self.device, non_blocking=True)
         aux_target = aux_target.to(self.device, non_blocking=True)
@@ -63,7 +63,7 @@ class nnUNetTrainerAuxStatus(nnUNetTrainer):
         # convert list to tensor of size (n,1)
         aux_labels = [x['status'] for x in aux_labels]
         aux_target = torch.tensor(aux_labels)
-        aux_target = aux_target.unsqueeze(1)
+        aux_target = aux_target.unsqueeze(1).float()
 
         data = data.to(self.device, non_blocking=True)
         aux_target = aux_target.to(self.device, non_blocking=True)
@@ -129,10 +129,10 @@ class nnUNetTrainerAuxStatus(nnUNetTrainer):
             fp_hard = fp_hard[1:]
             fn_hard = fn_hard[1:]
 
-        aux_output = aux_output > 0.5
+        aux_output = torch.sigmoid(aux_output) > 0.5
         aux_correct = (aux_output == aux_target).detach().cpu().numpy()
         aux_tp = sum(aux_correct)
-        aux_total = aux_output.size
+        aux_total = aux_correct.size
 
         return {'loss': l.detach().cpu().numpy(), 'tp_hard': tp_hard, 'fp_hard': fp_hard, 'fn_hard': fn_hard, 'aux_tp': aux_tp, 'aux_total': aux_total}
 
@@ -230,7 +230,7 @@ class nnUNetTrainerAuxStatus(nnUNetTrainer):
             # now wrap the loss
             seg_loss = DeepSupervisionWrapper(seg_loss, weights)
 
-        aux_loss = nn.BCELoss()
-        loss = CompositeLoss([seg_loss, aux_loss], weights=[1, self.configuration_manager.aux_loss_weight])
+        aux_loss = nn.BCEWithLogitsLoss()
+        loss = CompositeLoss([seg_loss, aux_loss], weights=[1, self.configuration_manager.configuration['aux_loss_weight']])
 
         return loss
