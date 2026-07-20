@@ -74,10 +74,16 @@ def print_summary(dataset, train_id, configuration=None):
     print("Encoder:")
     summary(network.encoder, input_size=example_shape,  col_names=("input_size", "output_size", "num_params"))
     print()
-    print("First two encoder blocks:")
-    s = summary(network.encoder.stages[0], input_size=example_shape,  col_names=("input_size", "output_size", "num_params"))
-    print(s)
-    summary(network.encoder.stages[1], input_size=s.summary_list[-1].output_size,  col_names=("input_size", "output_size", "num_params"))
+    print("First three encoder blocks (+ stem):")
+    stages_shape = example_shape
+    if hasattr(network.encoder, "stem") and network.encoder.stem:
+        print("Stem:")
+        s = summary(network.encoder.stem, input_size=example_shape,  col_names=("input_size", "output_size", "num_params"))
+        print(s)
+        stages_shape = s.summary_list[-1].output_size
+    s = summary(network.encoder.stages[0], input_size=stages_shape,  col_names=("input_size", "output_size", "num_params"))
+    s = summary(network.encoder.stages[1], input_size=s.summary_list[-1].output_size,  col_names=("input_size", "output_size", "num_params"))
+    summary(network.encoder.stages[2], input_size=s.summary_list[-1].output_size, col_names=("input_size", "output_size", "num_params"))
 
     print()
     print("Skip connections:")
@@ -87,4 +93,4 @@ def print_summary(dataset, train_id, configuration=None):
 
 
 if __name__ == '__main__':
-    print_summary("Dataset021_spheroids", "nnUNetTrainer__nnUNetPlans__2d")
+    print_summary("Dataset048_Lymphoma_r13_balanced", "nnUNetTrainer_noSmooth__nnUNetResEncUNetLPlans__3d_fullres")
