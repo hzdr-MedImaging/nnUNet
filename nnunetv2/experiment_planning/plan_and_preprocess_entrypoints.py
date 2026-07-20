@@ -1,5 +1,6 @@
 from nnunetv2.configuration import default_num_processes
-from nnunetv2.experiment_planning.plan_and_preprocess_api import extract_fingerprints, plan_experiments, preprocess
+from nnunetv2.experiment_planning.plan_and_preprocess_api import extract_fingerprints, plan_experiments, preprocess, \
+    make_balanced_split
 
 
 def extract_fingerprint_entry():
@@ -194,6 +195,20 @@ def plan_and_preprocess_entry():
     if not args.no_pp:
         print('Preprocessing...')
         preprocess(args.d, plans_identifier, args.c, np, args.verbose)
+
+def make_balanced_splits_entry():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-d', type=int,
+                        help="[REQUIRED] Dataset ID. Example: 2. This will generate balanced cross-validation splits "
+                             "for this dataset")
+    parser.add_argument('-n', type=int, required=False, default=5,
+                        help="[OPTIONAL] Number of splits. Default: 5")
+    parser.add_argument('-m', type=int, required=False, default=2,
+                        help="[OPTIONAL] Group size multiplier. Don't touch if you do not know what it is. Default: 2")
+
+    args, unrecognized_args = parser.parse_known_args()
+    make_balanced_split(args.d, args.n, args.m)
 
 
 if __name__ == '__main__':
