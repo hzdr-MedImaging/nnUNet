@@ -1,9 +1,39 @@
-from typing import List
+from typing import List, Union
 
 import numpy as np
 from batchgenerators.utilities.file_and_folder_operations import load_pickle, save_json
 from sklearn.model_selection import KFold
+from sklearn.utils import check_random_state
 from nnunetv2.training.dataloading.nnunet_dataset import nnUNetDataset
+
+
+class KFoldFlex(KFold):
+    def __init__(self, n_splits=5, shuffle=True, random_state=42):
+        super().__init__(n_splits, shuffle=shuffle, random_state=random_state)
+
+    def split_relaxed(self, X):
+        n_samples = len(X)
+        if n_samples >= self.n_splits:
+            for train_idx, test_idx in self.split(X):
+                yield train_idx, test_idx
+        else:
+            rng = check_random_state(self.random_state)
+            indices = np.arange(n_samples)
+            if self.shuffle:
+                rng.shuffle(indices)
+
+            # Assign each sample randomly to a fold
+            folds = np.array_split(indices, self.n_splits)
+
+            split_order = np.arange(self.n_splits)
+            # if self.shuffle:
+            #     rng.shuffle(split_order)
+
+            for i in split_order:
+                test_idx = folds[i]
+                train_idx = np.concatenate([folds[j] for j in range(self.n_splits) if j != i])
+                yield train_idx, test_idx
+
 
 
 def generate_crossval_split(train_identifiers: List[str], seed=12345, n_splits=5) -> List[dict[str, List[str]]]:
@@ -18,10 +48,13 @@ def generate_crossval_split(train_identifiers: List[str], seed=12345, n_splits=5
     return splits
 
 
-def generate_balanced_split(preprocessed_dataset_folder: str, seed=12345, n_splits=5, group_mult=2) -> List[dict[str, List[str]]]:
+def generate_balanced_split(preprocessed_dataset_folder: str, n_splits=5, group_mult=2, seed=12345) -> List[dict[str, List[str]]]:
     dataset = nnUNetDataset(preprocessed_dataset_folder, case_identifiers=None,
                                     num_images_properties_loading_threshold=0,
                                     folder_with_segs_from_previous_stage=None)
+
+    print("Preprocessed folder: ", preprocessed_dataset_folder)
+    print("Dataset size: ", len(dataset.keys()))
 
     group_size = n_splits * group_mult
     id_dict = {name: name.split("_")[0] for name in dataset.keys()}
@@ -39,6 +72,7 @@ def generate_balanced_split(preprocessed_dataset_folder: str, seed=12345, n_spli
     reverse = False
     # first fill the folds with triples, then doubles, then singles
     for val in reversed(len_values):
+        print("Distributing patients with ", val, " scans")
         # take only triples/doubles/singles, etc. and average the volumes within each entity
         sorted_vols = {k: np.average(v) for k, v in vols.items() if len(v) == val}
         # sort by volume (descending), so we distribute the biggest volumes first
@@ -49,7 +83,7 @@ def generate_balanced_split(preprocessed_dataset_folder: str, seed=12345, n_spli
         folds = [
             [
                 np.array(split_ids[i])[test_idx] for train_idx, test_idx in
-                KFold(n_splits=n_splits, shuffle=True, random_state=seed + i).split(split_ids[i])
+                KFoldFlex(n_splits=n_splits, shuffle=True, random_state=seed + i).split_relaxed(split_ids[i])
             ] for i in range(len(split_ids))
         ]
         # glue the folds together
@@ -57,7 +91,9 @@ def generate_balanced_split(preprocessed_dataset_folder: str, seed=12345, n_spli
         # fill the splits from the folds of
         for i in range(n_splits):
             idx = i if not reverse else n_splits - 1 - i
-            splits[idx]["val"].extend(np.concatenate([id_inv[v] for v in folds_test[i]]))
+            # skip empty folds
+            if len(folds_test[i]):
+                splits[idx]["val"].extend(np.concatenate([id_inv[v] for v in folds_test[i]]))
         reverse = not reverse
     # now the split is filled in the way that there are singles with small volumes on top. We can attempt to reshuffle
     # the few of them to make the splits of the approximately equal size
@@ -74,12 +110,15 @@ def generate_balanced_split(preprocessed_dataset_folder: str, seed=12345, n_spli
     for i in range(n_splits):
         splits[i]["train"] = list(set(id_dict.keys()) - set(splits[i]["val"]))
 
-    # val_vol_list = [[np.sum(np.load(preprocessed_dataset_folder + "/" + file + "_seg.npy", 'r') > 0) for file in splits[i]["val"]]
-    #             for i in range(n_splits)]
+    val_vol_list = [[np.sum(np.load(preprocessed_dataset_folder + "/" + file + ".npz", 'r')["seg"] > 0) for file in splits[i]["val"]]
+                for i in range(n_splits)]
+    val_vol_total = [np.sum(val_vol_list[i]) for i in range(n_splits)]
+    print("Fold volumes: ")
+    print(val_vol_total)
 
     return splits
 
 if __name__ == "__main__":
-    preprocessed_dataset_folder = "/pet/projekte/ai/nnUnet/preprocessed/Dataset048_Lymphoma_r13_balanced/nnUNetPlans_3d_fullres"
+    preprocessed_dataset_folder = "/pet/projekte/ai/nnUnet/preprocessed/Dataset048_Lymphoma_r14/nnUNetPlans_3d_fullres"
     splits = generate_balanced_split(preprocessed_dataset_folder, seed=12345, n_splits=5)
     # save_json(splits, "/pet/projekte/ai/nnUnet/preprocessed/Dataset048_Lymphoma_r13_balanced/splits_final.json")
