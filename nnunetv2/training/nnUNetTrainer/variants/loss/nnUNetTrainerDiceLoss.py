@@ -69,4 +69,3 @@ class nnUNetTrainerDiceCELoss_noSmooth(nnUNetTrainer):
             # now wrap the loss
             loss = DeepSupervisionWrapper(loss, weights)
         return loss
-

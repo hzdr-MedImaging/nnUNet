@@ -17,9 +17,9 @@ def load_pretrained_weights(network, fname, verbose=False):
 
     """
     if dist.is_initialized():
-        saved_model = torch.load(fname, map_location=torch.device('cuda', dist.get_rank()))
+        saved_model = torch.load(fname, map_location=torch.device('cuda', dist.get_rank()), weights_only=False)
     else:
-        saved_model = torch.load(fname)
+        saved_model = torch.load(fname, weights_only=False)
     pretrained_dict = saved_model['network_weights']
 
     skip_strings_in_pretrained = [
@@ -66,5 +66,3 @@ def load_pretrained_weights(network, fname, verbose=False):
             print(key, 'shape', value.shape)
         print("################### Done ###################")
     mod.load_state_dict(model_dict)
-
-

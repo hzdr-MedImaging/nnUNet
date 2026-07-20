@@ -54,8 +54,6 @@ if __name__ == '__main__':
                                                            part_id=0)
 
     # predict several npy images
-    from nnunetv2.imageio.simpleitk_reader_writer import SimpleITKIO
-
     img, props = SimpleITKIO().read_images([join(nnUNet_raw, 'Dataset003_Liver/imagesTs/liver_147_0000.nii.gz')])
     img2, props2 = SimpleITKIO().read_images([join(nnUNet_raw, 'Dataset003_Liver/imagesTs/liver_146_0000.nii.gz')])
     img3, props3 = SimpleITKIO().read_images([join(nnUNet_raw, 'Dataset003_Liver/imagesTs/liver_145_0000.nii.gz')])
@@ -89,7 +87,7 @@ if __name__ == '__main__':
     def my_iterator(list_of_input_arrs, list_of_input_props):
         preprocessor = predictor.configuration_manager.preprocessor_class(verbose=predictor.verbose)
         for a, p in zip(list_of_input_arrs, list_of_input_props):
-            data, seg = preprocessor.run_case_npy(a,
+            data, seg, p = preprocessor.run_case_npy(a,
                                                   None,
                                                   p,
                                                   predictor.plans_manager,

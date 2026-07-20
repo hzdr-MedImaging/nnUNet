@@ -13,10 +13,9 @@ class nnUNetTrainerBenchmark_5epochs_noDataLoading(nnUNetTrainerBenchmark_5epoch
         configuration: str,
         fold: int,
         dataset_json: dict,
-        unpack_dataset: bool = True,
         device: torch.device = torch.device("cuda"),
     ):
-        super().__init__(plans, configuration, fold, dataset_json, unpack_dataset, device)
+        super().__init__(plans, configuration, fold, dataset_json, device)
         self._set_batch_size_and_oversample()
         num_input_channels = determine_num_input_channels(
             self.plans_manager, self.configuration_manager, self.dataset_json
@@ -32,7 +31,7 @@ class nnUNetTrainerBenchmark_5epochs_noDataLoading(nnUNetTrainerBenchmark_5epoch
                 for k in self._get_deep_supervision_scales()
             ]
         else:
-            raise NotImplementedError("This trainer does not support deep supervision")
+            raise NotImplementedError("This trainer only works with deep supervision")
         self.dummy_batch = {"data": dummy_data, "target": dummy_target}
 
     def get_dataloaders(self):
@@ -61,5 +60,9 @@ class nnUNetTrainerBenchmark_5epochs_noDataLoading(nnUNetTrainerBenchmark_5epoch
                 self.on_epoch_end()
 
             self.on_train_end()
-        except RuntimeError:
+        except KeyboardInterrupt as ki:
+            raise ki
+        except RuntimeError as e:
             self.crashed_with_runtime_error = True
+            self.on_train_end()
+            self.print_to_log_file(f"An Exception occurred: {e}")
