@@ -23,7 +23,7 @@ class nnUNetDataLoader3D(nnUNetDataLoaderBase):
             force_fg = self.get_do_oversample(j)
 
             data, seg, properties = self._data.load_case(i)
-            if properties['aux_labels'] is not None:
+            if 'aux_labels' in properties.keys() and properties['aux_labels'] is not None:
                 case_properties.append(properties['aux_labels'])
 
             # If we are doing the cascade then the segmentation from the previous stage will already have been loaded by
@@ -79,11 +79,11 @@ class nnUNetDataLoader3D(nnUNetDataLoaderBase):
 
 if __name__ == '__main__':
     folder = '/media/fabian/data/nnUNet_preprocessed/Dataset002_Heart/3d_fullres'
-    folder = '/pet/projekte/ai/nnUnet/preprocessed/Dataset011_NSCLC/nnUNetPlans_3d_fullres'
-    plans = '/pet/projekte/ai/nnUnet/preprocessed/Dataset011_NSCLC/nnUNetPlans.json'
-    dataset_file = '/pet/projekte/ai/nnUnet/preprocessed/Dataset011_NSCLC/dataset.json'
+    folder = '/pet/projekte/ai/nnUnet/preprocessed/Dataset058_HNC_hpv_r1/nnUNetPlans_3d_fullres'
+    plans = '/pet/projekte/ai/nnUnet/preprocessed/Dataset058_HNC_hpv_r1/nnUNetPlans.json'
+    dataset_file = '/pet/projekte/ai/nnUnet/preprocessed/Dataset058_HNC_hpv_r1/dataset.json'
     dataset_json = json.load(open(dataset_file))
-    ds = nnUNetDataset(folder, ["pat-00058",])  # this should not load the properties!
+    ds = nnUNetDataset(folder, ["HN-CHUM-021_18850827_cnn",])  # this should not load the properties!
     plans_manager = PlansManager(plans)
     label_manager = plans_manager.get_label_manager(dataset_json)
     dl = nnUNetDataLoader3D(ds, 5, (16, 16, 16), (16, 16, 16), label_manager, 0.33, None, None)

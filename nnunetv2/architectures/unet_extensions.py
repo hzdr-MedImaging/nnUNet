@@ -236,10 +236,12 @@ class ResEncUNetAuxTask(nn.Module):
         print("Aux MLP block grad:", aux_block_grad)
 
     def forward(self, x) -> dict:
+
         skips = self.encoder(x)
         aux_out = self.aux_head(skips)
         seg_out = self.decoder(skips)
         return {"seg": seg_out, "aux": aux_out}
+
 
     def forward_aux(self, x):
         skips = self.encoder(x)
@@ -263,6 +265,25 @@ class ResEncUNetAuxTask(nn.Module):
     def initialize(module):
         InitWeights_He(1e-2)(module)
         init_last_bn_before_add_to_0(module)
+
+class ResEncUNetAuxEnh(ResEncUNetAuxTask):
+    def forward(self, x):
+        skips = self.encoder(x)
+        aux_out = self.aux_head(skips)
+        seg_out = self.decoder(skips)
+        # suppress non-confirmed detections
+        aux_out = torch.sigmoid(aux_out) > 0.5
+        aux_out = torch.squeeze(aux_out, 1)
+        not_detected = aux_out.logical_not() # fg not detected by aux head
+        seg_out[not_detected] = 0
+        seg_out[not_detected, 0] = 1 # rewrite as fg
+        return seg_out
+
+    def forward_heads(self, x) -> dict:
+        skips = self.encoder(x)
+        aux_out = self.aux_head(skips)
+        seg_out = self.decoder(skips)
+        return {"seg": seg_out, "aux": aux_out}
 
 
 if __name__ == '__main__':

@@ -28,6 +28,11 @@ class nnUNetLogger(object):
         self.optional_logging = {
             'mean_accuracy' : list(),
             'ema_accuracy' : list(),
+            'mean_accuracy_fg': list(),
+            'ema_accuracy_fg': list(),
+            'mean_fg_dice_enh': list(),
+            'ema_fg_dice_enh': list(),
+            'dice_per_class_or_region_enh': list(),
         }
         self.verbose = verbose
         # shut up, this logging is great
@@ -72,6 +77,14 @@ class nnUNetLogger(object):
             new_ema_accuracy = self.optional_logging['ema_accuracy'][epoch - 1] * 0.9 + 0.1 * value \
                 if len(self.optional_logging['ema_accuracy']) > 0 else value
             self.log_optional('ema_accuracy', new_ema_accuracy, epoch)
+        if key == 'mean_accuracy_fg':
+            new_ema_accuracy = self.optional_logging['ema_accuracy_fg'][epoch - 1] * 0.9 + 0.1 * value \
+                if len(self.optional_logging['ema_accuracy_fg']) > 0 else value
+            self.log_optional('ema_accuracy_fg', new_ema_accuracy, epoch)
+        if key == 'mean_fg_dice_enh':
+            new_ema_pseudo_dice = self.optional_logging['ema_fg_dice_enh'][epoch - 1] * 0.9 + 0.1 * value \
+                if len(self.optional_logging['ema_fg_dice_enh']) > 0 else value
+            self.log_optional('ema_fg_dice_enh', new_ema_pseudo_dice, epoch)
 
     def plot_progress_png(self, output_folder):
         # we infer the epoch form our internal logging
@@ -101,8 +114,29 @@ class nnUNetLogger(object):
             ax2.plot(x_values, self.optional_logging['ema_accuracy'][:epoch + 1], color='m', ls='-',
                      label="accuracy (mov. avg.)",
                      linewidth=4)
-            ax2.set_ylabel("pseudo dice/accuracy")
-            ax2.legend(loc=(0.2, 1))
+            ax2.set_ylabel("pseudo dice / accuracy")
+            ax2.legend(loc=(0.2, 1), ncol=2)
+
+        # it's either accuracy fg or enh dice
+        if len(self.optional_logging['mean_accuracy_fg']) > 0:
+            ax2.plot(x_values, self.optional_logging['mean_accuracy_fg'][:epoch + 1], color='darkviolet', ls='dotted',
+                     label="accuracy fg",
+                     linewidth=3)
+            ax2.plot(x_values, self.optional_logging['ema_accuracy_fg'][:epoch + 1], color='darkviolet', ls='-',
+                     label="accuracy fg (mov. avg.)",
+                     linewidth=4)
+            ax2.set_ylabel("pseudo dice / accuracy")
+            ax2.legend(loc=(0.2, 1), ncol=3)
+
+        if len(self.optional_logging['mean_fg_dice_enh']) > 0:
+            ax2.plot(x_values, self.optional_logging['mean_fg_dice_enh'][:epoch + 1], color='darkgreen', ls='dotted',
+                     label="dice enh",
+                     linewidth=3)
+            ax2.plot(x_values, self.optional_logging['ema_fg_dice_enh'][:epoch + 1], color='darkgreen', ls='-',
+                     label="dice enh (mov. avg.)",
+                     linewidth=4)
+            ax2.set_ylabel("pseudo dice / accuracy")
+            ax2.legend(loc=(0.2, 1), ncol=3)
 
         # epoch times to see whether the training speed is consistent (inconsistent means there are other jobs
         # clogging up the system)

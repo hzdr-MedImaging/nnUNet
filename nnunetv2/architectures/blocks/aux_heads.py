@@ -42,6 +42,7 @@ class AuxMLPHead(nn.Module):
             hidden_features = tuple(hidden_features)
 
         pool_kwargs = {} if pool_op_kwargs is None else pool_op_kwargs
+        dropout_op_kwargs = {} if dropout_op_kwargs is None else dropout_op_kwargs
         final_act_kwargs = {} if final_act_kwargs is None else final_act_kwargs
 
         self.features_per_stage = encoder.output_channels
@@ -49,23 +50,29 @@ class AuxMLPHead(nn.Module):
         self.hidden_features = hidden_features
         self.block_grad = block_grad
 
-        self.total_input_features = sum((self.features_per_stage[i] for i in active_stages))
-        self.input_features = (self.total_input_features,) +  self.hidden_features[:-1]
-
         self.pool_ops = nn.ModuleList([pool_op(**pool_kwargs) for stage in active_stages])
-        self.fc_ops = [
-            LinearNormNonlinDropout(in_features, out_features,
-                                    norm_op, norm_op_kwargs,
-                                    dropout_op, dropout_op_kwargs,
-                                    nonlin, nonlin_kwargs)
-            for in_features, out_features in zip(self.input_features, hidden_features)]
-
+        pooled_features = sum((self.features_per_stage[i] for i in active_stages))
+        self.body_ops = []
         self.final_ops = []
-        self.final_ops.append(Linear(hidden_features[-1], output_logits, bias=True))
+
+        if len(self.hidden_features) > 0:
+            input_features = (pooled_features,) +  self.hidden_features[:-1]
+            self.body_ops = [
+                LinearNormNonlinDropout(in_features, out_features,
+                                        norm_op, norm_op_kwargs,
+                                        dropout_op, dropout_op_kwargs,
+                                        nonlin, nonlin_kwargs)
+                for in_features, out_features in zip(input_features, hidden_features)]
+            self.final_ops.append(Linear(hidden_features[-1], output_logits, bias=True))
+        else:
+            if dropout_op is not None:
+                self.body_ops = [dropout_op(**dropout_op_kwargs),]
+            self.final_ops.append(Linear(pooled_features, output_logits, bias=True))
+
         if final_act is not None:
             self.final_ops.append(final_act(**final_act_kwargs))
 
-        self.mlp = nn.Sequential(*self.fc_ops, *self.final_ops)
+        self.mlp = nn.Sequential(*self.body_ops, *self.final_ops)
 
     def forward(self, skips):
         if self.block_grad:
@@ -95,10 +102,10 @@ if __name__ == '__main__':
                               nonlin=nn.ReLU,
                               return_skips=True, disable_default_stem=False, stem_channels=None)
 
-    aux_head = AuxMLPHead(encoder = encoder, active_stages=[-3,-1], hidden_features=(16,64), output_logits=2,
+    aux_head = AuxMLPHead(encoder = encoder, active_stages=[-3,-1], hidden_features=(), output_logits=2,
                           pool_op=nnunetv2.architectures.operations.global_pooling.GlobalLpPoolTrainable3d, pool_op_kwargs={'p': 3},
                           norm_op=nn.BatchNorm1d, norm_op_kwargs=None,
-                          dropout_op=nn.Dropout, dropout_op_kwargs={'p': 0.1, 'inplace': True},
+                          dropout_op=None, dropout_op_kwargs={'p': 0.1, 'inplace': True},
                           nonlin=nn.ReLU, nonlin_kwargs=None,
                           final_act=nn.Sigmoid,
                           block_grad=True)

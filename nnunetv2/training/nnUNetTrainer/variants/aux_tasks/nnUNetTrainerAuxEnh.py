@@ -15,22 +15,14 @@ from nnunetv2.utilities.helpers import dummy_context
 from batchgenerators.utilities.file_and_folder_operations import join
 
 
-class nnUNetTrainerAuxStatus(nnUNetTrainer):
+class nnUNetTrainerAuxEnh(nnUNetTrainer):
     def train_step(self, batch: dict) -> dict:
         data = batch['data']
         target = batch['target']
 
-        aux_labels = batch['aux_labels']
-        # convert list to tensor of size (n,1)
-        aux_labels = [x['status'] for x in aux_labels]
-        aux_target = torch.tensor(aux_labels)
-        aux_target = aux_target.unsqueeze(1).float()
-
-        if self.configuration_manager.configuration['aux_fg_only']:
-            # detect lesions
-            target_sum = torch.sum(target[0], dim=list(range(2, target[0].ndim)))
-            target_present = (target_sum > 0.5)
-            aux_target = aux_target * target_present
+        # detect lesions
+        target_sum = torch.sum(target[0], dim=list(range(2, target[0].ndim)))
+        aux_target = (target_sum > 0.5).float()
 
         data = data.to(self.device, non_blocking=True)
         aux_target = aux_target.to(self.device, non_blocking=True)
@@ -45,7 +37,7 @@ class nnUNetTrainerAuxStatus(nnUNetTrainer):
         # If the device_type is 'mps' then it will complain that mps is not implemented, even if enabled=False is set. Whyyyyyyy. (this is why we don't make use of enabled=False)
         # So autocast will only be active if we have a cuda device.
         with autocast(self.device.type, enabled=True) if self.device.type == 'cuda' else dummy_context():
-            output = self.network(data)
+            output = self.network.forward_heads(data)
             # del data
             l = self.loss([output["seg"], target], [output["aux"], aux_target])
 
@@ -59,24 +51,16 @@ class nnUNetTrainerAuxStatus(nnUNetTrainer):
             l.backward()
             torch.nn.utils.clip_grad_norm_(self.network.parameters(), 12)
             self.optimizer.step()
+
         return {'loss': l.detach().cpu().numpy()}
 
     def validation_step(self, batch: dict) -> dict:
         data = batch['data']
         target = batch['target']
 
-        aux_labels = batch['aux_labels']
-        # convert list to tensor of size (n,1)
-        aux_labels = [x['status'] for x in aux_labels]
-        aux_target = torch.tensor(aux_labels)
-        aux_target = aux_target.unsqueeze(1).float()
-
         # detect lesions
         target_sum = torch.sum(target[0], dim=list(range(2, target[0].ndim)))
-        target_present = (target_sum > 0.5)
-
-        if self.configuration_manager.configuration['aux_fg_only']:
-            aux_target = aux_target * target_present
+        aux_target = (target_sum > 0.5).float()
 
         data = data.to(self.device, non_blocking=True)
         aux_target = aux_target.to(self.device, non_blocking=True)
@@ -90,7 +74,7 @@ class nnUNetTrainerAuxStatus(nnUNetTrainer):
         # If the device_type is 'mps' then it will complain that mps is not implemented, even if enabled=False is set. Whyyyyyyy. (this is why we don't make use of enabled=False)
         # So autocast will only be active if we have a cuda device.
         with autocast(self.device.type, enabled=True) if self.device.type == 'cuda' else dummy_context():
-            output_dict = self.network(data)
+            output_dict = self.network.forward_heads(data)
             output = output_dict['seg']
             aux_output = output_dict['aux']
             del data
@@ -147,11 +131,23 @@ class nnUNetTrainerAuxStatus(nnUNetTrainer):
         aux_tp = sum(aux_correct)
         aux_total = aux_correct.size
 
-        target_present = target_present.numpy()
-        aux_tp_fg = sum(aux_correct * target_present)
-        aux_total_fg = sum(target_present)
+        aux_output = torch.squeeze(aux_output, 1)
+        not_detected = aux_output.logical_not() # tumor not detected by aux head
+        # enforce background
+        predicted_segmentation_onehot[not_detected] = 0
+        predicted_segmentation_onehot[not_detected, 0] = 1
+        tp, fp, fn, _ = get_tp_fp_fn_tn(predicted_segmentation_onehot, target, axes=axes, mask=mask)
 
-        return {'loss': l.detach().cpu().numpy(), 'tp_hard': tp_hard, 'fp_hard': fp_hard, 'fn_hard': fn_hard, 'aux_tp': aux_tp, 'aux_total': aux_total, 'aux_tp_fg': aux_tp_fg, 'aux_total_fg': aux_total_fg}
+        tp_enh = tp.detach().cpu().numpy()
+        fp_enh = fp.detach().cpu().numpy()
+        fn_enh = fn.detach().cpu().numpy()
+        if not self.label_manager.has_regions:
+            # see above
+            tp_enh = tp_enh[1:]
+            fp_enh = fp_enh[1:]
+            fn_enh = fn_enh[1:]
+
+        return {'loss': l.detach().cpu().numpy(), 'tp_hard': tp_hard, 'fp_hard': fp_hard, 'fn_hard': fn_hard, 'aux_tp': aux_tp, 'aux_total': aux_total, 'tp_enh': tp_enh, 'fp_enh': fp_enh, 'fn_enh': fn_enh}
 
     def on_validation_epoch_end(self, val_outputs: List[dict]):
         outputs_collated = collate_outputs(val_outputs)
@@ -159,11 +155,13 @@ class nnUNetTrainerAuxStatus(nnUNetTrainer):
         fp = np.sum(outputs_collated['fp_hard'], 0)
         fn = np.sum(outputs_collated['fn_hard'], 0)
 
+        tp_enh = np.sum(outputs_collated['tp_enh'], 0)
+        fp_enh = np.sum(outputs_collated['fp_enh'], 0)
+        fn_enh = np.sum(outputs_collated['fn_enh'], 0)
+
         aux_tp = np.sum(outputs_collated['aux_tp'])
         aux_total = np.sum(outputs_collated['aux_total'])
 
-        aux_tp_fg = np.sum(outputs_collated['aux_tp_fg'])
-        aux_total_fg = np.sum(outputs_collated['aux_total_fg'])
 
         if self.is_ddp:
             world_size = dist.get_world_size()
@@ -187,14 +185,16 @@ class nnUNetTrainerAuxStatus(nnUNetTrainer):
             loss_here = np.mean(outputs_collated['loss'])
 
         global_dc_per_class = [i for i in [2 * i / (2 * i + j + k) for i, j, k in zip(tp, fp, fn)]]
+        global_dc_enh_per_class = [i for i in [2 * i / (2 * i + j + k) for i, j, k in zip(tp_enh, fp_enh, fn_enh)]]
         mean_fg_dice = np.nanmean(global_dc_per_class)
+        mean_fg_dice_enh = np.nanmean(global_dc_enh_per_class)
         mean_accuracy = aux_tp / aux_total
-        mean_accuracy_fg = aux_tp_fg / aux_total_fg
         self.logger.log('mean_fg_dice', mean_fg_dice, self.current_epoch)
         self.logger.log('dice_per_class_or_region', global_dc_per_class, self.current_epoch)
         self.logger.log('val_losses', loss_here, self.current_epoch)
         self.logger.log_optional('mean_accuracy', mean_accuracy, self.current_epoch)
-        self.logger.log_optional('mean_accuracy_fg', mean_accuracy_fg, self.current_epoch)
+        self.logger.log_optional('mean_fg_dice_enh', mean_fg_dice_enh, self.current_epoch)
+        self.logger.log_optional('dice_per_class_or_region_enh', global_dc_enh_per_class, self.current_epoch)
 
     def on_epoch_end(self):
         self.logger.log('epoch_end_timestamps', time(), self.current_epoch)
@@ -203,8 +203,9 @@ class nnUNetTrainerAuxStatus(nnUNetTrainer):
         self.print_to_log_file('val_loss', np.round(self.logger.my_fantastic_logging['val_losses'][-1], decimals=4))
         self.print_to_log_file('Pseudo dice', [str(np.round(i, decimals=4)) for i in
                                                self.logger.my_fantastic_logging['dice_per_class_or_region'][-1]])
+        self.print_to_log_file('Pseudo dice enh', [str(np.round(i, decimals=4)) for i in
+                                               self.logger.optional_logging['dice_per_class_or_region_enh'][-1]])
         self.print_to_log_file('Accuracy', np.round(self.logger.optional_logging['mean_accuracy'][-1], decimals=4))
-        self.print_to_log_file('Accuracy FG', np.round(self.logger.optional_logging['mean_accuracy_fg'][-1], decimals=4))
         self.print_to_log_file(
             f"Epoch time: {np.round(self.logger.my_fantastic_logging['epoch_end_timestamps'][-1] - self.logger.my_fantastic_logging['epoch_start_timestamps'][-1], decimals=2)} s")
 
@@ -257,3 +258,11 @@ class nnUNetTrainerAuxStatus(nnUNetTrainer):
         loss = CompositeLoss([seg_loss, aux_loss], weights=[1, self.configuration_manager.configuration['aux_loss_weight']])
 
         return loss
+
+class nnUNetTrainerAuxEnh5epoch(nnUNetTrainerAuxEnh):
+    def __init__(self, plans: dict, configuration: str, fold: int, dataset_json: dict, unpack_dataset: bool = True,
+                 device: torch.device = torch.device('cuda')):
+        super().__init__(plans, configuration, fold, dataset_json, unpack_dataset, device)
+        assert self.fold == 0, "It makes absolutely no sense to specify a certain fold. Stick with 0 so that we can parse the results."
+        self.disable_checkpointing = False
+        self.num_epochs = 5
