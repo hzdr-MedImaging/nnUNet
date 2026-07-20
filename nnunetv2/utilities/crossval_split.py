@@ -4,7 +4,7 @@ import numpy as np
 from batchgenerators.utilities.file_and_folder_operations import load_pickle, save_json
 from sklearn.model_selection import KFold
 from sklearn.utils import check_random_state
-from nnunetv2.training.dataloading.nnunet_dataset import nnUNetDataset
+from nnunetv2.training.dataloading.nnunet_dataset import infer_dataset_class
 
 
 class KFoldFlex(KFold):
@@ -49,9 +49,8 @@ def generate_crossval_split(train_identifiers: List[str], seed=12345, n_splits=5
 
 
 def generate_balanced_split(preprocessed_dataset_folder: str, n_splits=5, group_mult=2, seed=12345) -> List[dict[str, List[str]]]:
-    dataset = nnUNetDataset(preprocessed_dataset_folder, case_identifiers=None,
-                                    num_images_properties_loading_threshold=0,
-                                    folder_with_segs_from_previous_stage=None)
+    dataset_class = infer_dataset_class(preprocessed_dataset_folder)
+    dataset = dataset_class(preprocessed_dataset_folder, identifiers=None, folder_with_segs_from_previous_stage=None)
 
     print("Preprocessed folder: ", preprocessed_dataset_folder)
     print("Dataset size: ", len(dataset.keys()))
