@@ -8,49 +8,9 @@ from torch.nn.modules.conv import _ConvNd
 from torch.nn.modules.dropout import _DropoutNd
 
 from nnunetv2.architectures.blocks.spatial_encoding import get_sincos_embeding
+from nnunetv2.architectures.operations.combo_operations import DropoutNormNonlin
 from dynamic_network_architectures.building_blocks.residual_encoders import ResidualEncoder
 from dynamic_network_architectures.building_blocks.plain_conv_encoder import PlainConvEncoder
-
-
-class DropoutNormNonlin(nn.Module):
-    def __init__(self,
-                 output_channels: int,
-                 norm_op: Union[None, Type[nn.Module]] = None,
-                 norm_op_kwargs: dict = None,
-                 dropout_op: Union[None, Type[_DropoutNd]] = None,
-                 dropout_op_kwargs: dict = None,
-                 nonlin: Union[None, Type[torch.nn.Module]] = None,
-                 nonlin_kwargs: dict = None,
-                 nonlin_first: bool = False
-                 ):
-        super(DropoutNormNonlin, self).__init__()
-
-        if norm_op_kwargs is None:
-            norm_op_kwargs = {}
-        if nonlin_kwargs is None:
-            nonlin_kwargs = {}
-
-        ops = []
-
-        if dropout_op is not None:
-            self.dropout = dropout_op(**dropout_op_kwargs)
-            ops.append(self.dropout)
-
-        if norm_op is not None:
-            self.norm = norm_op(output_channels, **norm_op_kwargs)
-            ops.append(self.norm)
-
-        if nonlin is not None:
-            self.nonlin = nonlin(**nonlin_kwargs)
-            ops.append(self.nonlin)
-
-        if nonlin_first and (norm_op is not None and nonlin is not None):
-            ops[-1], ops[-2] = ops[-2], ops[-1]
-
-        self.all_modules = nn.Sequential(*ops)
-
-    def forward(self, x):
-        return self.all_modules(x)
 
 
 class QKNormalize(nn.Module):
