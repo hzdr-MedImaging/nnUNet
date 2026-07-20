@@ -37,12 +37,15 @@ def export_pretrained_model(dataset_name_or_id: Union[int, str], output_file: st
                             export_crossval_predictions: bool = False,
                             new_dataset_name: str = None,
                             new_trainer: str = None,
+                            new_plans_identifier: str = None,
                             new_file_format: str = None) -> None:
     dataset_name = maybe_convert_to_dataset_name(dataset_name_or_id)
     if new_dataset_name is None:
         new_dataset_name = dataset_name
     if new_trainer is None:
         new_trainer = trainer
+    if new_plans_identifier is None:
+        new_plans_identifier = plans_identifier
 
     if new_file_format is not None:
         new_reader, new_extension = get_reader_and_ext(new_file_format)
@@ -51,6 +54,7 @@ def export_pretrained_model(dataset_name_or_id: Union[int, str], output_file: st
         rp = os.path.relpath(source_file, nnUNet_results)
         rp = rp.replace(dataset_name + '/', new_dataset_name + '/')
         rp = rp.replace("/" + trainer + '__', "/" + new_trainer + '__')
+        rp = rp.replace("__" + plans_identifier + '__', "__" + new_plans_identifier + '__')
         return rp
 
     with(zipfile.ZipFile(output_file, 'w', zipfile.ZIP_DEFLATED)) as zipf:
@@ -126,11 +130,12 @@ def export_pretrained_model(dataset_name_or_id: Union[int, str], output_file: st
 
             # plans
             source_file = join(trainer_output_dir, "plans.json")
-            if new_file_format is None and dataset_name == new_dataset_name and not stripped:
+            if new_file_format is None and dataset_name == new_dataset_name and plans_identifier == new_plans_identifier and not stripped:
                 zipf.write(source_file, arcpath(source_file))
             else:
                 plans = load_json(source_file)
                 plans['dataset_name'] = new_dataset_name
+                plans['plans_name'] = new_plans_identifier
                 if new_file_format is not None:
                     old_reader = plans['image_reader_writer']
                     plans['image_reader_writer'] = new_reader
