@@ -173,11 +173,17 @@ class nnUNetDataLoader(DataLoader):
                     bbox_lbs, bbox_ubs = self.get_bbox(shape, force_fg, properties['class_locations'])
                     bbox = [[i, j] for i, j in zip(bbox_lbs, bbox_ubs)]
 
-                    data_cropped = torch.from_numpy(crop_and_pad_nd(data, bbox, 0)).float()
-                    seg_cropped = torch.from_numpy(crop_and_pad_nd(seg, bbox, -1, cast_cropped_to=np.int16)).to(torch.int16)
-                    if seg_prev is not None:
-                        seg_prev_cropped = torch.from_numpy(crop_and_pad_nd(seg_prev, bbox, -1, cast_cropped_to=np.int16)).to(torch.int16)
-                        seg_cropped = torch.cat((seg_cropped, seg_prev_cropped[None]), dim=0)
+                    with warnings.catch_warnings():
+                        # ignore 'The given NumPy array is not writable' warning
+                        warnings.filterwarnings(
+                            "ignore",
+                            message="The given NumPy array is not writable.*"
+                        )
+                        data_cropped = torch.from_numpy(crop_and_pad_nd(data, bbox, 0)).float()
+                        seg_cropped = torch.from_numpy(crop_and_pad_nd(seg, bbox, -1, cast_cropped_to=np.int16)).to(torch.int16)
+                        if seg_prev is not None:
+                            seg_prev_cropped = torch.from_numpy(crop_and_pad_nd(seg_prev, bbox, -1, cast_cropped_to=np.int16)).to(torch.int16)
+                            seg_cropped = torch.cat((seg_cropped, seg_prev_cropped[None]), dim=0)
 
                     if self.patch_size_was_2d:
                         data_cropped = data_cropped[:, 0]

@@ -1171,7 +1171,7 @@ class nnUNetTrainer(object):
 
         self.print_to_log_file('train_loss', np.round(self.logger.get_value('train_losses', step=-1), decimals=4))
         self.print_to_log_file('val_loss', np.round(self.logger.get_value('val_losses', step=-1), decimals=4))
-        self.print_to_log_file('Pseudo dice', [np.round(i, decimals=4) for i in
+        self.print_to_log_file('Pseudo dice', [str(np.round(i, decimals=4)) for i in
                                                self.logger.get_value('dice_per_class_or_region', step=-1)])
         self.print_to_log_file(
             f"Epoch time: {np.round(self.logger.get_value('epoch_end_timestamps', step=-1) - self.logger.get_value('epoch_start_timestamps', step=-1), decimals=2)} s")
@@ -1184,7 +1184,7 @@ class nnUNetTrainer(object):
         # handle 'best' checkpointing. ema_fg_dice is computed by the logger and can be accessed like this
         if self._best_ema is None or self.logger.get_value('ema_fg_dice', step=-1) > self._best_ema:
             self._best_ema = self.logger.get_value('ema_fg_dice', step=-1)
-            self.print_to_log_file(f"Yayy! New best EMA pseudo Dice: {np.round(self._best_ema, decimals=4)}")
+            self.print_to_log_file("Yayy! New best EMA pseudo Dice: ", str(np.round(self._best_ema, decimals=4)))
             self.save_checkpoint(join(self.output_folder, 'checkpoint_best.pth'))
 
         if self.local_rank == 0:
