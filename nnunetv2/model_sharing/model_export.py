@@ -2,6 +2,7 @@ import tempfile
 import zipfile
 import torch
 
+from nnunetv2.utilities.checkpoints import resolve_checkpoint_file
 from nnunetv2.utilities.file_path_utilities import *
 from batchgenerators.utilities.file_and_folder_operations import load_json
 
@@ -33,7 +34,7 @@ def export_pretrained_model(dataset_name_or_id: Union[int, str], output_file: st
                             folds: Tuple[int, ...] = (0, 1, 2, 3, 4),
                             strict: bool = True,
                             stripped: bool = False,
-                            save_checkpoints: Tuple[str, ...] = ('checkpoint_final.pth',),
+                            save_checkpoints: Tuple[str, ...] = ('checkpoint_final.safetensors',),
                             export_crossval_predictions: bool = False,
                             new_dataset_name: str = None,
                             new_trainer: str = None,
@@ -82,9 +83,10 @@ def export_pretrained_model(dataset_name_or_id: Union[int, str], output_file: st
                     if isfile(source_file):
                         zipf.write(source_file, arcpath(source_file))
 
-                # all requested checkpoints
+                # all requested checkpoints, in whichever format they exist (models trained with older nnU-Net
+                # versions have .pth checkpoints)
                 for chk in save_checkpoints:
-                    source_file = join(trainer_output_dir, fold_folder, chk)
+                    source_file = resolve_checkpoint_file(join(trainer_output_dir, fold_folder, chk))
                     if new_trainer is None:
                         zipf.write(source_file, arcpath(source_file))
                     else:

@@ -9,6 +9,8 @@ import numpy as np
 from batchgenerators.utilities.file_and_folder_operations import join, load_pickle, isfile, write_pickle, subfiles
 
 from nnunetv2.configuration import default_num_processes
+from nnunetv2.training.dataloading.foreground_locations import (
+    MMAP_KWARGS, ForegroundLocationsBase, announce_missing_store, get_foreground_locations)
 from nnunetv2.training.dataloading.utils import unpack_dataset
 
 
@@ -216,13 +218,44 @@ class nnUNetBaseDataset(ABC):
         self.source_folder = folder
         self.folder_with_segs_from_previous_stage = folder_with_segs_from_previous_stage
         self.identifiers = identifiers
+        # resolved on first use: datasets that are only used for validation never touch it. That first use
+        # happens inside the dataloader workers though, so the "no store found" notice has to be emitted
+        # here instead - this runs in the process that builds the dataset, exactly once.
+        self._foreground_locations = None
+        announce_missing_store(folder)
+
+    @property
+    def foreground_locations(self) -> ForegroundLocationsBase:
+        """
+        Access to the foreground sampling locations of this dataset. Backed by the compressed store if one is
+        present, otherwise by the legacy class_locations entries in the per-case pkl files.
+        """
+        if self._foreground_locations is None:
+            self._foreground_locations = get_foreground_locations(self.source_folder)
+        return self._foreground_locations
 
     def __getitem__(self, identifier):
         return self.load_case(identifier)
 
     @abstractmethod
     def load_case(self, identifier):
+        """
+        Returns (data, seg, seg_prev). Deliberately does NOT return the case properties: the training
+        dataloader does not need them, and reading them for every patch used to be the single most expensive
+        part of dataloading. Use get_properties() if you need them.
+        """
         pass
+
+    def get_properties(self, identifier) -> dict:
+        """Case properties (spacing, cropping bbox, shapes, ...). Needed for validation/export, not for training."""
+        return load_pickle(join(self.source_folder, identifier + '.pkl'))
+
+    def get_shape(self, identifier) -> Tuple[int, ...]:
+        """
+        Spatial shape of a case (no channel axis). The implementations below read it from the array header
+        without touching any voxels; this fallback exists so that subclasses do not have to implement it.
+        """
+        return tuple(self.load_case(identifier)[0].shape[1:])
 
     @staticmethod
     @abstractmethod
@@ -248,6 +281,9 @@ class nnUNetBaseDataset(ABC):
 
 class nnUNetDatasetNumpy(nnUNetBaseDataset):
     def load_case(self, identifier):
+        # .npy files are mapped read-only. nnUNetDataLoader copies the crops of them it hands to the data augmentation.
+        # Copy-on-write mappings (mmap_mode='c') would avoid some of those copies, but each write then costs a page
+        # fault per 4 kB, which is several times slower than copying the crop
         data_npy_file = join(self.source_folder, identifier + '.npy')
         if not isfile(data_npy_file):
             data = np.load(join(self.source_folder, identifier + '.npz'))['data']
@@ -263,14 +299,19 @@ class nnUNetDatasetNumpy(nnUNetBaseDataset):
         if self.folder_with_segs_from_previous_stage is not None:
             prev_seg_npy_file = join(self.folder_with_segs_from_previous_stage, identifier + '.npy')
             if isfile(prev_seg_npy_file):
-                seg_prev = np.load(prev_seg_npy_file, 'r')
+                seg_prev = np.load(prev_seg_npy_file, mmap_mode='r')
             else:
                 seg_prev = np.load(join(self.folder_with_segs_from_previous_stage, identifier + '.npz'))['seg']
         else:
             seg_prev = None
 
-        properties = load_pickle(join(self.source_folder, identifier + '.pkl'))
-        return data, seg, seg_prev, properties
+        return data, seg, seg_prev
+
+    def get_shape(self, identifier) -> Tuple[int, ...]:
+        data_npy_file = join(self.source_folder, identifier + '.npy')
+        if isfile(data_npy_file):
+            return tuple(np.load(data_npy_file, mmap_mode='r').shape[1:])
+        return tuple(np.load(join(self.source_folder, identifier + '.npz'))['data'].shape[1:])
 
     @staticmethod
     def save_case(
@@ -309,8 +350,7 @@ class nnUNetDatasetBlosc2(nnUNetBaseDataset):
                  folder_with_segs_from_previous_stage: str = None):
         super().__init__(folder, identifiers, folder_with_segs_from_previous_stage)
         blosc2.set_nthreads(1)
-        # mmap does not work with Windows -> https://github.com/MIC-DKFZ/nnUNet/issues/2723
-        self.mmap_kwargs = {} if os.name == "nt" else {'mmap_mode': 'r'}
+        self.mmap_kwargs = MMAP_KWARGS
 
     def __getitem__(self, identifier):
         return self.load_case(identifier)
@@ -332,8 +372,12 @@ class nnUNetDatasetBlosc2(nnUNetBaseDataset):
         else:
             seg_prev = None
 
-        properties = load_pickle(join(self.source_folder, identifier + '.pkl'))
-        return data, seg, seg_prev, properties
+        return data, seg, seg_prev
+
+    def get_shape(self, identifier) -> Tuple[int, ...]:
+        # blosc2.open only reads the frame header, no voxels are decompressed
+        return tuple(blosc2.open(urlpath=join(self.source_folder, identifier + '.b2nd'), mode='r',
+                                 dparams={'nthreads': 1}, **self.mmap_kwargs).shape[1:])
 
     @staticmethod
     def _select_filter(arr: np.ndarray, blocks, chunks, codec, clevel) -> "blosc2.Filter":
@@ -455,7 +499,10 @@ class nnUNetDatasetBlosc2(nnUNetBaseDataset):
     ):
         if isfile(output_filename_truncated + '.b2nd'):
             os.remove(output_filename_truncated + '.b2nd')
-        blosc2.asarray(seg, urlpath=output_filename_truncated + '.b2nd', chunks=chunks_seg, blocks=blocks_seg)
+        # Without an explicit thread count blosc2 uses the process-wide blosc2.nthreads (all cores unless
+        # set_nthreads(1) ran in this process). save_seg runs in the export pool's workers, so that oversubscribes.
+        blosc2.asarray(seg, urlpath=output_filename_truncated + '.b2nd', chunks=chunks_seg, blocks=blocks_seg,
+                       cparams={'nthreads': 1})
 
     @staticmethod
     def get_identifiers(folder: str) -> List[str]:

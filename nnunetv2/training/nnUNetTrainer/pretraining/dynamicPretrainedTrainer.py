@@ -13,7 +13,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from nnunetv2.training.dataloading.nnunet_dataset import infer_dataset_class
 from nnunetv2.training.lr_scheduler.polylr import PolyLRScheduler
 from nnunetv2.training.nnUNetTrainer.nnUNetTrainer import nnUNetTrainer
-from nnunetv2.utilities.helpers import empty_cache, dummy_context
+from nnunetv2.utilities.helpers import empty_cache, dummy_context, set_default_inductor_cache_dir
 from nnunetv2.utilities.get_network_from_plans import get_network_from_plans
 from nnunetv2.utilities.label_handling.label_handling import determine_num_input_channels
 from nnunetv2.utilities.load_weights_utils import *
@@ -51,12 +51,10 @@ class DynamicPretrainedTrainer(PretrainedTrainer):
             )
 
             self.network = self.build_network_architecture(
-                architecture_class_name=self.configuration_manager.network_arch_class_name,
-                arch_init_kwargs=self.configuration_manager.network_arch_init_kwargs,
-                arch_init_kwargs_req_import=self.configuration_manager.network_arch_init_kwargs_req_import,
-                input_patch_size=self.configuration_manager.patch_size,
-                num_input_channels=self.num_input_channels,
-                num_output_channels=self.label_manager.num_segmentation_heads,
+                self.plans_manager,
+                self.configuration_manager,
+                self.num_input_channels,
+                self.label_manager.num_segmentation_heads,
                 enable_deep_supervision=False,
             ).to(self.device)
 
@@ -97,6 +95,7 @@ class DynamicPretrainedTrainer(PretrainedTrainer):
 
             if self._do_i_compile():
                 self.print_to_log_file("Using torch.compile...")
+                set_default_inductor_cache_dir()
                 self.network = torch.compile(self.network)
 
             self.optimizer, self.lr_scheduler = self.configure_optimizers()
