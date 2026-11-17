@@ -2,6 +2,11 @@ import torch
 import numpy as np
 
 from nnunetv2.training.nnUNetTrainer.variants.loss.nnUNetTrainerDiceLoss import nnUNetTrainerDiceCELoss_noSmooth
+from nnunetv2.training.nnUNetTrainer.variants.network_architecture.nnUNetTrainerGradBlock import \
+    nnUNetTrainerGradBlockSkips, nnUNetTrainerGradBlockSkipsSteps
+from nnunetv2.training.nnUNetTrainer.variants.network_architecture.nnUNetTrainerSkipWeights import \
+    nnUNetTrainerSkipWeightLinear, nnUNetTrainerSkipWeightSin, nnUNetTrainerSkipWeightStep, \
+    nnUNetTrainerSkipWeightConcurrentLinear, nnUNetTrainerSkipWeightConcurrentHarm
 from nnunetv2.training.nnUNetTrainer.variants.sampling.nnUNetTrainer_probabilisticOversampling import nnUNetTrainer_probabilisticOversampling
 from nnunetv2.training.nnUNetTrainer.variants.network_architecture.nnUNetTrainerDeepSupervisionVariants import nnUNetTrainer_betaBinomDS, nnUNetTrainer_betaBinomDSm1, nnUNetTrainer_betaBinomDSm2
 from nnunetv2.training.nnUNetTrainer.variants.network_architecture.nnUNetTrainerNoDeepSupervision import nnUNetTrainerNoDeepSupervision
@@ -123,5 +128,54 @@ class nnUNetTrainer_noSmooth_betaBinomDSm2_probOS33(nnUNetTrainer_noSmooth_probO
 
 class nnUNetTrainer_noSmooth_noDS_probOS33(nnUNetTrainer_noSmooth_probOS33, nnUNetTrainerNoDeepSupervision):
     def __init__(self, plans: dict, configuration: str, fold: int, dataset_json: dict, 
+                 device: torch.device = torch.device('cuda')):
+        super().__init__(plans, configuration, fold, dataset_json, device)
+
+class nnUNetTrainer_nS_SkipWeightLinear(nnUNetTrainer_noSmooth, nnUNetTrainerSkipWeightLinear):
+    def __init__(self, plans: dict, configuration: str, fold: int, dataset_json: dict,
+                 device: torch.device = torch.device('cuda')):
+        super().__init__(plans, configuration, fold, dataset_json, device)
+
+class nnUNetTrainer_nS_SkipWeightSin(nnUNetTrainer_noSmooth, nnUNetTrainerSkipWeightSin):
+    def __init__(self, plans: dict, configuration: str, fold: int, dataset_json: dict,
+                 device: torch.device = torch.device('cuda')):
+        super().__init__(plans, configuration, fold, dataset_json, device)
+
+class nnUNetTrainer_nS_SkipWeightStep(nnUNetTrainer_noSmooth, nnUNetTrainerSkipWeightStep):
+    def __init__(self, plans: dict, configuration: str, fold: int, dataset_json: dict,
+                 device: torch.device = torch.device('cuda')):
+        super().__init__(plans, configuration, fold, dataset_json, device)
+
+class nnUNetTrainer_nS_SkipWeightStep150(nnUNetTrainer_noSmooth, nnUNetTrainerSkipWeightStep):
+    def __init__(self, plans: dict, configuration: str, fold: int, dataset_json: dict,
+                 device: torch.device = torch.device('cuda')):
+        super().__init__(plans, configuration, fold, dataset_json, device)
+        self.target_skip_epoch = 150
+
+class nnUNetTrainer_nS_SkipWeightStep50(nnUNetTrainer_noSmooth, nnUNetTrainerSkipWeightStep):
+    def __init__(self, plans: dict, configuration: str, fold: int, dataset_json: dict,
+                 device: torch.device = torch.device('cuda')):
+        super().__init__(plans, configuration, fold, dataset_json, device)
+        self.target_skip_epoch = 50
+
+class nnUNetTrainer_nS_SkipWeightConcurrentLinear50(nnUNetTrainer_noSmooth, nnUNetTrainerSkipWeightConcurrentLinear):
+    def __init__(self, plans: dict, configuration: str, fold: int, dataset_json: dict,
+                 device: torch.device = torch.device('cuda')):
+        super().__init__(plans, configuration, fold, dataset_json, device)
+        self.target_skip_epoch = 50
+
+class nnUNetTrainer_nS_SkipWeightConcurrentHarm50(nnUNetTrainer_noSmooth, nnUNetTrainerSkipWeightConcurrentHarm):
+    def __init__(self, plans: dict, configuration: str, fold: int, dataset_json: dict,
+                 device: torch.device = torch.device('cuda')):
+        super().__init__(plans, configuration, fold, dataset_json, device)
+        self.target_skip_epoch = 50
+
+class nnUNetTrainer_nS_GradBlockSkips(nnUNetTrainer_noSmooth, nnUNetTrainerGradBlockSkips):
+    def __init__(self, plans: dict, configuration: str, fold: int, dataset_json: dict,
+                 device: torch.device = torch.device('cuda')):
+        super().__init__(plans, configuration, fold, dataset_json, device)
+
+class nnUNetTrainer_nS_GradBlockSkipsSteps(nnUNetTrainer_noSmooth, nnUNetTrainerGradBlockSkipsSteps):
+    def __init__(self, plans: dict, configuration: str, fold: int, dataset_json: dict,
                  device: torch.device = torch.device('cuda')):
         super().__init__(plans, configuration, fold, dataset_json, device)
