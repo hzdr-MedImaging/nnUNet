@@ -2,6 +2,7 @@ from abc import abstractmethod
 import torch
 from torch import nn, autocast
 from dynamic_network_architectures.architectures.primus import Primus, PrimusV2B, PrimusV2L, PrimusV2M, PrimusV2S
+from nnunetv2.architectures.primus_extensions import PrimusP1S, PrimusP1NS
 
 try:
     from dynamic_network_architectures.architectures.primus import PrimusV3S, PrimusV3B, PrimusV3M, PrimusV3L
@@ -509,3 +510,72 @@ class _Primus_L_48_BS1(nnUNet_Primus_L_Trainer):
         plans["configurations"][configuration]["patch_size"] = (48, 48, 48)  # As per repository
         plans["configurations"][configuration]["batch_size"] = 1
         super().__init__(plans, configuration, fold, dataset_json, device)
+
+class nnUNet_PrimusP1S_Trainer(AbstractPrimus):
+
+    @staticmethod
+    def build_network_architecture(
+        plans_manager: PlansManager,
+        configuration_manager: ConfigurationManager,
+        num_input_channels: int,
+        num_output_channels: int,
+        enable_deep_supervision: bool = True,
+    ) -> nn.Module:
+        # this architecture will crash if the patch size is not divisible by 8!
+        model = PrimusP1S(
+            num_input_channels,
+            num_output_channels,
+            patch_embed_size=(8, 8, 8),
+            input_shape=configuration_manager.patch_size,
+            drop_path_rate=0.2,
+            scale_attn_inner=True,
+            init_values=0.1,
+            skip_mode = "add"
+        )
+        return model
+
+class nnUNet_PrimusP1NS_Trainer(AbstractPrimus):
+
+    @staticmethod
+    def build_network_architecture(
+        plans_manager: PlansManager,
+        configuration_manager: ConfigurationManager,
+        num_input_channels: int,
+        num_output_channels: int,
+        enable_deep_supervision: bool = True,
+    ) -> nn.Module:
+        # this architecture will crash if the patch size is not divisible by 8!
+        model = PrimusP1NS(
+            num_input_channels,
+            num_output_channels,
+            patch_embed_size=(8, 8, 8),
+            input_shape=configuration_manager.patch_size,
+            drop_path_rate=0.2,
+            scale_attn_inner=True,
+            init_values=0.1,
+            skip_mode = "add"
+        )
+        return model
+
+class nnUNet_PrimusP1S_concat_Trainer(AbstractPrimus):
+
+    @staticmethod
+    def build_network_architecture(
+        plans_manager: PlansManager,
+        configuration_manager: ConfigurationManager,
+        num_input_channels: int,
+        num_output_channels: int,
+        enable_deep_supervision: bool = True,
+    ) -> nn.Module:
+        # this architecture will crash if the patch size is not divisible by 8!
+        model = PrimusP1S(
+            num_input_channels,
+            num_output_channels,
+            patch_embed_size=(8, 8, 8),
+            input_shape=configuration_manager.patch_size,
+            drop_path_rate=0.2,
+            scale_attn_inner=True,
+            init_values=0.1,
+            skip_mode = "concat"
+        )
+        return model
