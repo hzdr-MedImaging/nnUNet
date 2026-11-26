@@ -6,7 +6,7 @@ from nnunetv2.training.nnUNetTrainer.variants.network_architecture.nnUNetTrainer
     nnUNetTrainerGradBlockSkips, nnUNetTrainerGradBlockSkipsSteps
 from nnunetv2.training.nnUNetTrainer.variants.network_architecture.nnUNetTrainerSkipWeights import \
     nnUNetTrainerSkipWeightLinear, nnUNetTrainerSkipWeightSin, nnUNetTrainerSkipWeightStep, \
-    nnUNetTrainerSkipWeightConcurrentLinear, nnUNetTrainerSkipWeightConcurrentHarm
+    nnUNetTrainerSkipWeightConcurrentLinear, nnUNetTrainerSkipWeightConcurrentHarm, nnUNetTrainerFirstLastSkip
 from nnunetv2.training.nnUNetTrainer.variants.sampling.nnUNetTrainer_probabilisticOversampling import nnUNetTrainer_probabilisticOversampling
 from nnunetv2.training.nnUNetTrainer.variants.network_architecture.nnUNetTrainerDeepSupervisionVariants import nnUNetTrainer_betaBinomDS, nnUNetTrainer_betaBinomDSm1, nnUNetTrainer_betaBinomDSm2
 from nnunetv2.training.nnUNetTrainer.variants.network_architecture.nnUNetTrainerNoDeepSupervision import nnUNetTrainerNoDeepSupervision
@@ -176,6 +176,11 @@ class nnUNetTrainer_nS_GradBlockSkips(nnUNetTrainer_noSmooth, nnUNetTrainerGradB
         super().__init__(plans, configuration, fold, dataset_json, device)
 
 class nnUNetTrainer_nS_GradBlockSkipsSteps(nnUNetTrainer_noSmooth, nnUNetTrainerGradBlockSkipsSteps):
+    def __init__(self, plans: dict, configuration: str, fold: int, dataset_json: dict,
+                 device: torch.device = torch.device('cuda')):
+        super().__init__(plans, configuration, fold, dataset_json, device)
+
+class nnUNetTrainer_nS_FirstLastSkip(nnUNetTrainer_noSmooth, nnUNetTrainerFirstLastSkip):
     def __init__(self, plans: dict, configuration: str, fold: int, dataset_json: dict,
                  device: torch.device = torch.device('cuda')):
         super().__init__(plans, configuration, fold, dataset_json, device)

@@ -103,7 +103,8 @@ class nnUNetPredictor(object):
 
         configuration_manager = plans_manager.get_configuration(configuration_name)
         # TODO: make a better way to get attention matrix out of the model without breaking torch.compile
-        configuration_manager.configuration['architecture']['arch_kwargs'].update(overwrites)
+        if configuration_manager.configuration['architecture']['arch_kwargs'] is not None:
+            configuration_manager.configuration['architecture']['arch_kwargs'].update(overwrites)
         # restore network
         num_input_channels = determine_num_input_channels(plans_manager, configuration_manager, dataset_json)
         trainer_class = recursive_find_trainer_class_by_name(trainer_name)

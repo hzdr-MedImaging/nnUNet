@@ -50,3 +50,11 @@ class nnUNetTrainerSkipWeightConcurrentLinear(nnUNetTrainerSkipWeightLinear):
 class nnUNetTrainerSkipWeightConcurrentHarm(nnUNetTrainerSkipWeightConcurrentLinear):
     def weight_transfer_function(self, x):
         return (1 - np.cos(x * np.pi)) / 2
+
+class nnUNetTrainerFirstLastSkip(nnUNetTrainerSkipWeightLinear):
+    def calculate_weights(self, target_epoch):
+        n_stages = self.configuration_manager.network_arch_init_kwargs['n_stages']
+        weights = [0] * n_stages
+        weights[0] = 1
+        weights[-1] = 1
+        return weights
